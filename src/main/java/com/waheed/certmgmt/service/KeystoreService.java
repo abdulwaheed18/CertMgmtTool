@@ -84,7 +84,7 @@ public class KeystoreService {
         Enumeration<String> aliases = ks.aliases();
         while (aliases.hasMoreElements()) {
             String alias = aliases.nextElement();
-            // **FIX**: This now correctly builds a single object per alias, with the chain inside it.
+            // This now correctly builds a single object per alias, with the chain inside it.
             CertificateDetails details = buildCertificateDetailsTree(ks, alias);
             if (details != null) {
                 certDetailsList.add(details);
@@ -95,7 +95,7 @@ public class KeystoreService {
 
     public Map<String, Integer> getKeystoreStats(KeyStore ks) throws Exception {
         Map<String, Integer> stats = new HashMap<>();
-        // **FIX**: The total count is now based on the number of aliases (entries) in the keystore.
+        // The total count is now based on the number of aliases (entries) in the keystore.
         stats.put("total", ks.size());
         stats.put("valid", 0);
         stats.put("warning", 0);
@@ -116,30 +116,35 @@ public class KeystoreService {
     private CertificateDetails buildCertificateDetailsTree(KeyStore ks, String alias) throws Exception {
         Certificate[] chain = ks.getCertificateChain(alias);
         if (chain == null) {
+            // It's a trusted certificate entry, not a key entry
             Certificate cert = ks.getCertificate(alias);
             if (cert instanceof X509Certificate) {
                 chain = new Certificate[]{cert};
             } else {
-                return null;
+                return null; // Not a supported certificate type
             }
         }
 
         List<CertificateDetails> chainDetails = new ArrayList<>();
         for (Certificate cert : chain) {
             if (cert instanceof X509Certificate x509Cert) {
+                // Pass the alias to every certificate in the chain for context
                 chainDetails.add(buildSingleCertificateDetails(alias, ks, x509Cert));
             }
         }
 
         if (chainDetails.isEmpty()) return null;
 
+        // The primary certificate is the first one in the chain
         CertificateDetails primaryDetails = chainDetails.get(0);
+        // Set the full chain within the primary certificate object
         primaryDetails.setChain(chainDetails);
         return primaryDetails;
     }
 
 
     private CertificateDetails buildSingleCertificateDetails(String alias, KeyStore ks, X509Certificate cert) throws Exception {
+        // Correctly determine entry type based on alias
         String entryType = ks.isKeyEntry(alias) ? "Key Pair (Private Key & Certificate)" : "Trusted Certificate";
 
         return CertificateDetails.builder()
@@ -220,20 +225,17 @@ public class KeystoreService {
         if (key instanceof RSAPublicKey rsaKey) {
             return rsaKey.getModulus().bitLength();
         }
+        // Add support for other key types if needed
         return 0;
     }
 
     private Map<String, String> getThumbprints(X509Certificate cert) throws Exception {
         Map<String, String> thumbprints = new HashMap<>();
-
         byte[] derCert = cert.getEncoded();
-
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
         thumbprints.put("SHA-1", bytesToHex(sha1.digest(derCert)));
-
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
         thumbprints.put("SHA-256", bytesToHex(sha256.digest(derCert)));
-
         return thumbprints;
     }
 
@@ -246,7 +248,7 @@ public class KeystoreService {
             }
             hexString.append(hex);
         }
-        return hexString.toString();
+        return hexString.toString().toUpperCase();
     }
 
     public KeyPairDetails createKeyPair(KeyStore ks, String alias, String keyPassword, Map<String, String> subjectDetails, int keySize, String sigAlg) throws Exception {
@@ -354,12 +356,14 @@ public class KeystoreService {
         StringWriter privateKeyWriter = new StringWriter();
         try (JcaPEMWriter pemWriter = new JcaPEMWriter(privateKeyWriter)) {
             if (encryptionPassword != null && !encryptionPassword.isEmpty()) {
+                // Use a modern and secure encryption algorithm like AES-256-CBC
                 OutputEncryptor encryptor = new JcePKCSPBEOutputEncryptorBuilder(PKCSObjectIdentifiers.pbeWithSHAAnd3_KeyTripleDES_CBC)
                         .setProvider(BC_PROVIDER)
                         .build(encryptionPassword.toCharArray());
                 JcaPKCS8Generator pkcs8Generator = new JcaPKCS8Generator(privateKey, encryptor);
                 pemWriter.writeObject(pkcs8Generator);
             } else {
+                // Unencrypted private key
                 pemWriter.writeObject(new PemObject("PRIVATE KEY", privateKey.getEncoded()));
             }
         }

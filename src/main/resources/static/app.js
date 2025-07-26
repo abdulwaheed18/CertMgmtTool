@@ -5,18 +5,19 @@ const API_BASE_URL = 'http://localhost:8080/api/v1';
 
 // --- Helper Functions ---
 const api = {
-    uploadKeystore: (file, password, sessionId) => {
+    // NOTE: All 'sessionId' parameters are removed. 'credentials: include' is added.
+    uploadKeystore: (file, password) => {
         const formData = new FormData();
         formData.append('keystoreFile', file);
         formData.append('keystorePassword', password);
-        formData.append('sessionId', sessionId);
-        return fetch(`${API_BASE_URL}/keystore/upload`, { method: 'POST', body: formData });
+        return fetch(`${API_BASE_URL}/keystore/upload`, { method: 'POST', body: formData, credentials: 'include' });
     },
-    createKeystore: (password, sessionId) => {
+    createKeystore: (password) => {
         return fetch(`${API_BASE_URL}/keystore/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password, sessionId }),
+            body: JSON.stringify({ password }),
+            credentials: 'include'
         });
     },
     createKeyPair: (data) => {
@@ -24,31 +25,31 @@ const api = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
+            credentials: 'include'
         });
     },
-    importCertificate: (file, alias, sessionId) => {
+    importCertificate: (file, alias) => {
         const formData = new FormData();
         formData.append('certFile', file);
         formData.append('alias', alias);
-        formData.append('sessionId', sessionId);
-        return fetch(`${API_BASE_URL}/keystore/import-cert`, { method: 'POST', body: formData });
+        return fetch(`${API_BASE_URL}/keystore/import-cert`, { method: 'POST', body: formData, credentials: 'include' });
     },
-    updateCertificateChain: (file, alias, keyPassword, sessionId) => {
+    updateCertificateChain: (file, alias, keyPassword) => {
         const formData = new FormData();
         formData.append('certFile', file);
         formData.append('alias', alias);
         formData.append('keyPassword', keyPassword);
-        formData.append('sessionId', sessionId);
-        return fetch(`${API_BASE_URL}/keystore/update-chain`, { method: 'POST', body: formData });
+        return fetch(`${API_BASE_URL}/keystore/update-chain`, { method: 'POST', body: formData, credentials: 'include' });
     },
-    deleteEntry: (alias, sessionId) => {
-        return fetch(`${API_BASE_URL}/keystore/entry/${alias}?sessionId=${sessionId}`, { method: 'DELETE' });
+    deleteEntry: (alias) => {
+        return fetch(`${API_BASE_URL}/keystore/entry/${alias}`, { method: 'DELETE', credentials: 'include' });
     },
     generateCsr: (data) => {
         return fetch(`${API_BASE_URL}/keystore/generate-csr`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
+            credentials: 'include'
         });
     },
     exportPrivateKey: (data) => {
@@ -56,6 +57,7 @@ const api = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
+            credentials: 'include'
         });
     },
 };
@@ -336,7 +338,7 @@ const CreateKeyPairModal = ({ isOpen, onClose, handleCreateKeyPair }) => {
     );
 };
 
-const GenerateCsrModal = ({ isOpen, onClose, alias, sessionId, setError }) => {
+const GenerateCsrModal = ({ isOpen, onClose, alias, setError }) => {
     const [keyPassword, setKeyPassword] = useState('');
     const [csr, setCsr] = useState('');
     const [loading, setLoading] = useState(false);
@@ -350,7 +352,7 @@ const GenerateCsrModal = ({ isOpen, onClose, alias, sessionId, setError }) => {
         setError(null);
         setCsr('');
         try {
-            const res = await api.generateCsr({ alias, keyPassword, sessionId });
+            const res = await api.generateCsr({ alias, keyPassword });
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || 'Failed to generate CSR.');
@@ -403,7 +405,7 @@ const GenerateCsrModal = ({ isOpen, onClose, alias, sessionId, setError }) => {
     );
 };
 
-const UpdateChainModal = ({ isOpen, onClose, alias, handleUpdate, sessionId }) => {
+const UpdateChainModal = ({ isOpen, onClose, alias, handleUpdate }) => {
     const [keyPassword, setKeyPassword] = useState('');
     const [file, setFile] = useState(null);
 
@@ -412,7 +414,7 @@ const UpdateChainModal = ({ isOpen, onClose, alias, handleUpdate, sessionId }) =
     const handleSubmit = (e) => {
         e.preventDefault();
         if (file) {
-            handleUpdate(file, alias, keyPassword, sessionId);
+            handleUpdate(file, alias, keyPassword);
             onClose();
         }
     };
@@ -442,29 +444,31 @@ const UpdateChainModal = ({ isOpen, onClose, alias, handleUpdate, sessionId }) =
 };
 
 
-const ExportModal = ({ isOpen, onClose, certificate, sessionId, setError }) => {
+const ExportModal = ({ isOpen, onClose, certificate, setError }) => {
     const [exportType, setExportType] = useState('cert');
     const [certFormat, setCertFormat] = useState('pem');
     const [keyPassword, setKeyPassword] = useState('');
     const [encryptionPassword, setEncryptionPassword] = useState('');
 
     useEffect(() => {
-        setExportType('cert');
-        setCertFormat('pem');
-        setKeyPassword('');
-        setEncryptionPassword('');
-    }, [certificate]);
+        if (isOpen) {
+            setExportType('cert');
+            setCertFormat('pem');
+            setKeyPassword('');
+            setEncryptionPassword('');
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
     const handleExport = async () => {
         setError(null);
         if (exportType === 'cert') {
-            window.open(`${API_BASE_URL}/keystore/export-cert/${certificate.alias}?format=${certFormat}&sessionId=${sessionId}`, '_blank');
+            // Direct download link for certificate doesn't need credentials as it's a GET request
+            window.open(`${API_BASE_URL}/keystore/export-cert/${certificate.alias}?format=${certFormat}`, '_blank');
         } else {
             try {
                 const res = await api.exportPrivateKey({
-                    sessionId,
                     alias: certificate.alias,
                     keyPassword,
                     encryptionPassword,
@@ -567,6 +571,8 @@ const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
         </div>
     );
 
+    const firstCertInChain = certificate.chain[0];
+
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-full overflow-y-auto">
@@ -575,67 +581,67 @@ const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
                      <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-2xl">&times;</button>
                 </div>
 
-                <div className="flex space-x-6">
+                <div className="flex flex-col md:flex-row space-y-6 md:space-y-0 md:space-x-6">
                     {/* Left Pane: Certificate Chain */}
-                    <div className="w-1/3 border-r pr-4 dark:border-slate-700">
+                    <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r pb-4 md:pb-0 md:pr-4 dark:border-slate-700">
                         <h3 className="text-lg font-semibold mb-3 text-indigo-600 dark:text-indigo-400">Certificate Path</h3>
                          <ul className="space-y-2">
                              {certificate.chain.map((cert, index) => (
-                                 <li key={cert.serialNumber} className="flex items-start space-x-2">
+                                 <li key={cert.serialNumber} className="flex items-start space-x-2 p-2 rounded-md bg-slate-50 dark:bg-slate-700/50">
                                      <i className={`fas ${index === 0 ? 'fa-certificate' : 'fa-arrow-turn-up fa-rotate-90'} mt-1 text-slate-400`}></i>
                                      <div>
-                                         <p className="font-semibold text-sm text-slate-700 dark:text-slate-200">{parseDn(cert.subject).find(d => d.key === 'CN')?.value}</p>
-                                         <p className="text-xs text-slate-500 dark:text-slate-400">Issuer: {parseDn(cert.issuer).find(d => d.key === 'CN')?.value}</p>
+                                         <p className="font-semibold text-sm text-slate-700 dark:text-slate-200">{parseDn(cert.subject).find(d => d.key === 'CN')?.value || 'N/A'}</p>
+                                         <p className="text-xs text-slate-500 dark:text-slate-400">Issuer: {parseDn(cert.issuer).find(d => d.key === 'CN')?.value || 'N/A'}</p>
                                      </div>
                                  </li>
                              ))}
                          </ul>
                     </div>
 
-                    {/* Right Pane: Details of Selected Cert (always shows first cert for now) */}
-                    <div className="w-2/3">
+                    {/* Right Pane: Details of Selected Cert */}
+                    <div className="w-full md:w-2/3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-                            <DetailSection title="Subject"><DnDetails dn={certificate.chain[0].subject} /></DetailSection>
-                            <DetailSection title="Issuer"><DnDetails dn={certificate.chain[0].issuer} /></DetailSection>
+                            <DetailSection title="Subject"><DnDetails dn={firstCertInChain.subject} /></DetailSection>
+                            <DetailSection title="Issuer"><DnDetails dn={firstCertInChain.issuer} /></DetailSection>
                         </div>
 
                         <DetailSection title="Validity">
-                            <DetailItem label="Not Before">{new Date(certificate.chain[0].notBefore).toLocaleString()}</DetailItem>
-                            <DetailItem label="Not After">{new Date(certificate.chain[0].notAfter).toLocaleString()}</DetailItem>
+                            <DetailItem label="Not Before">{new Date(firstCertInChain.notBefore).toLocaleString()}</DetailItem>
+                            <DetailItem label="Not After">{new Date(firstCertInChain.notAfter).toLocaleString()}</DetailItem>
                         </DetailSection>
 
                         <DetailSection title="Details">
-                            <DetailItem label="Version">{certificate.chain[0].version}</DetailItem>
-                            <DetailItem label="Serial Number">{certificate.chain[0].serialNumber}</DetailItem>
-                            <DetailItem label="Signature Algorithm">{certificate.chain[0].signatureAlgorithm}</DetailItem>
+                            <DetailItem label="Version">{firstCertInChain.version}</DetailItem>
+                            <DetailItem label="Serial Number">{firstCertInChain.serialNumber}</DetailItem>
+                            <DetailItem label="Signature Algorithm">{firstCertInChain.signatureAlgorithm}</DetailItem>
                         </DetailSection>
 
                         <DetailSection title="Public Key">
-                            <DetailItem label="Algorithm">{certificate.chain[0].publicKeyAlgorithm}</DetailItem>
-                            <DetailItem label="Size">{certificate.chain[0].publicKeySize} bits</DetailItem>
+                            <DetailItem label="Algorithm">{firstCertInChain.publicKeyAlgorithm}</DetailItem>
+                            <DetailItem label="Size">{firstCertInChain.publicKeySize} bits</DetailItem>
                         </DetailSection>
 
-                        {certificate.chain[0].keyUsage?.length > 0 &&
+                        {firstCertInChain.keyUsage?.length > 0 &&
                             <DetailSection title="Key Usage">
-                                <p className="text-green-600 dark:text-green-400">{certificate.chain[0].keyUsage.join(', ')}</p>
+                                <p className="text-green-600 dark:text-green-400">{firstCertInChain.keyUsage.join(', ')}</p>
                             </DetailSection>
                         }
 
-                         {certificate.chain[0].extendedKeyUsage?.length > 0 &&
+                         {firstCertInChain.extendedKeyUsage?.length > 0 &&
                             <DetailSection title="Extended Key Usage">
-                                {certificate.chain[0].extendedKeyUsage.map(u => <p key={u}>{u}</p>)}
+                                {firstCertInChain.extendedKeyUsage.map(u => <p key={u}>{u}</p>)}
                             </DetailSection>
                         }
 
-                        {certificate.chain[0].subjectAlternativeNames?.length > 0 &&
+                        {firstCertInChain.subjectAlternativeNames?.length > 0 &&
                             <DetailSection title="Subject Alternative Names (SANs)">
-                                {certificate.chain[0].subjectAlternativeNames.map(n => <p key={n}>{n}</p>)}
+                                {firstCertInChain.subjectAlternativeNames.map(n => <p key={n}>{n}</p>)}
                             </DetailSection>
                         }
 
                         <DetailSection title="Thumbprints">
-                            <DetailItem label="SHA-256">{certificate.chain[0].thumbprints['SHA-256']}</DetailItem>
-                            <DetailItem label="SHA-1">{certificate.chain[0].thumbprints['SHA-1']}</DetailItem>
+                            <DetailItem label="SHA-256">{firstCertInChain.thumbprints['SHA-256']}</DetailItem>
+                            <DetailItem label="SHA-1">{firstCertInChain.thumbprints['SHA-1']}</DetailItem>
                         </DetailSection>
                     </div>
                 </div>
@@ -688,7 +694,7 @@ const ImportCertificateModal = ({ isOpen, onClose, handleImport }) => {
     );
 };
 
-const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, setError, endSession }) => {
+const Dashboard = ({ dashboardData, setDashboardData, setLoading, setError, endSession }) => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [viewCert, setViewCert] = useState(null);
@@ -702,7 +708,7 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
         setLoading(true);
         setError(null);
         try {
-            const res = await api.createKeyPair({ ...data, sessionId });
+            const res = await api.createKeyPair(data);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to create key pair.');
             setDashboardData(result);
@@ -717,7 +723,7 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
         setLoading(true);
         setError(null);
         try {
-            const res = await api.importCertificate(file, alias, sessionId);
+            const res = await api.importCertificate(file, alias);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to import certificate.');
             setDashboardData(result);
@@ -732,7 +738,7 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
          setLoading(true);
         setError(null);
         try {
-            const res = await api.updateCertificateChain(file, alias, keyPassword, sessionId);
+            const res = await api.updateCertificateChain(file, alias, keyPassword);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to update chain.');
             setDashboardData(result);
@@ -744,11 +750,11 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
     };
 
     const handleDelete = async (alias) => {
-        if (!confirm(`Are you sure you want to delete the entry with alias "${alias}"?`)) return;
+        if (!confirm(`Are you sure you want to delete the entry with alias "${alias}"? This action cannot be undone.`)) return;
         setLoading(true);
         setError(null);
         try {
-            const res = await api.deleteEntry(alias, sessionId);
+            const res = await api.deleteEntry(alias);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to delete entry.');
             setDashboardData(result);
@@ -760,14 +766,14 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
     };
 
     const downloadKeystore = () => {
-        window.open(`${API_BASE_URL}/keystore/download?sessionId=${sessionId}`, '_blank');
+        window.open(`${API_BASE_URL}/keystore/download`, '_blank');
     };
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Keystore Dashboard</h1>
-                <div className="flex space-x-3">
+                <div className="flex flex-wrap gap-3">
                     <button onClick={() => setIsCreateModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition"><i className="fas fa-key mr-2"></i>Create Key Pair</button>
                     <button onClick={() => setIsImportModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-teal-600 hover:bg-teal-700 transition"><i className="fas fa-file-import mr-2"></i>Import Trust Cert</button>
                     <button onClick={downloadKeystore} className="px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 transition"><i className="fas fa-save mr-2"></i>Save Keystore</button>
@@ -788,10 +794,10 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
 
             <CreateKeyPairModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} handleCreateKeyPair={handleCreateKeyPair} />
             <ImportCertificateModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} handleImport={handleImport} />
-            <UpdateChainModal isOpen={!!updateChainAlias} onClose={() => setUpdateChainAlias(null)} alias={updateChainAlias} handleUpdate={handleUpdateChain} sessionId={sessionId} />
+            <UpdateChainModal isOpen={!!updateChainAlias} onClose={() => setUpdateChainAlias(null)} alias={updateChainAlias} handleUpdate={handleUpdateChain} />
             {viewCert && <CertificateViewModal isOpen={true} onClose={() => setViewCert(null)} certificate={viewCert} />}
-            {exportCert && <ExportModal isOpen={true} onClose={() => setExportCert(null)} certificate={exportCert} sessionId={sessionId} setError={setError} />}
-            {csrAlias && <GenerateCsrModal isOpen={true} onClose={() => setCsrAlias(null)} alias={csrAlias} sessionId={sessionId} setError={setError} />}
+            {exportCert && <ExportModal isOpen={true} onClose={() => setExportCert(null)} certificate={exportCert} setError={setError} />}
+            {csrAlias && <GenerateCsrModal isOpen={true} onClose={() => setCsrAlias(null)} alias={csrAlias} setError={setError} />}
         </div>
     );
 };
@@ -799,15 +805,10 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
 
 // --- Main App Component ---
 function App() {
-    const [sessionId, setSessionId] = useState(null);
     const [dashboardData, setDashboardData] = useState({ certificates: [], stats: { total: 0, valid: 0, warning: 0, expired: 0 } });
     const [isKeystoreLoaded, setIsKeystoreLoaded] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-
-    useEffect(() => {
-        setSessionId(crypto.randomUUID());
-    }, []);
 
     const handleApiResponse = async (promise) => {
         setLoading(true);
@@ -816,30 +817,32 @@ function App() {
             const response = await promise;
             const result = await response.json();
             if (!response.ok) {
+                if (response.status === 401) {
+                     throw new Error("Your session may have expired. Please refresh the page and try again.");
+                }
                 throw new Error(result.error || 'An unknown error occurred.');
             }
             setDashboardData(result);
             setIsKeystoreLoaded(true);
         } catch (err) {
             setError(err.message);
-            setIsKeystoreLoaded(false);
+            // Don't set keystore loaded to false on subsequent errors
         } finally {
             setLoading(false);
         }
     };
 
     const handleCreate = (password) => {
-        handleApiResponse(api.createKeystore(password, sessionId));
+        handleApiResponse(api.createKeystore(password));
     };
 
     const handleUpload = (file, password) => {
-        handleApiResponse(api.uploadKeystore(file, password, sessionId));
+        handleApiResponse(api.uploadKeystore(file, password));
     };
 
     const endSession = () => {
-        setDashboardData({ certificates: [], stats: { total: 0, valid: 0, warning: 0, expired: 0 } });
-        setIsKeystoreLoaded(false);
-        setError(null);
+        // Simple reload is the easiest way to ensure a clean state and new session
+        window.location.reload();
     };
 
     return (
@@ -873,7 +876,6 @@ function App() {
                 ) : (
                     <Dashboard
                         dashboardData={dashboardData}
-                        sessionId={sessionId}
                         setDashboardData={setDashboardData}
                         setLoading={setLoading}
                         setError={setError}
