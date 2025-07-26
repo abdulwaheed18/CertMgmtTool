@@ -1,10 +1,12 @@
 package com.waheed.certmgmt.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Date;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -17,6 +19,9 @@ public class CertificateDetails {
     private Date notAfter;
     private String serialNumber;
     private String signatureAlgorithm;
-    private String entryType; // e.g., "Certificate", "Key Entry"
-    private String status; // e.g., "VALID", "EXPIRED", "WARNING"
+    private String entryType;
+    private String status;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL) // Prevents serialization of null chains
+    private List<CertificateDetails> chain;
 }

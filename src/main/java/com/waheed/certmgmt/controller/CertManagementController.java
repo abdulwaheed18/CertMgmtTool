@@ -13,12 +13,9 @@ import java.security.KeyStore;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * REST Controller for Certificate and Keystore Management.
- */
 @RestController
 @RequestMapping("/api/v1/keystore")
-@CrossOrigin(origins = "*") // Allow all origins for local development
+@CrossOrigin(origins = "*")
 public class CertManagementController {
 
     @Autowired
@@ -35,13 +32,18 @@ public class CertManagementController {
         return ks;
     }
 
+    private String getPasswordForSession(String sessionId) {
+        String password = keystorePasswords.get(sessionId);
+        if (password == null) {
+            throw new IllegalStateException("No keystore password found for this session.");
+        }
+        return password;
+    }
+
     @PostMapping("/upload")
     public ResponseEntity<?> handleKeystoreUpload(@RequestParam("keystoreFile") MultipartFile file,
                                                   @RequestParam("keystorePassword") String password,
                                                   @RequestParam("sessionId") String sessionId) {
-        if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Please select a keystore file."));
-        }
         try {
             KeyStore ks = keystoreService.loadKeyStore(file.getBytes(), password);
             activeKeystores.put(sessionId, ks);
@@ -56,9 +58,6 @@ public class CertManagementController {
     public ResponseEntity<?> createNewKeystore(@RequestBody Map<String, String> payload) {
         String password = payload.get("password");
         String sessionId = payload.get("sessionId");
-        if (password == null || sessionId == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Password and sessionId are required."));
-        }
         try {
             KeyStore ks = KeyStore.getInstance("JKS");
             ks.load(null, password.toCharArray());
@@ -75,10 +74,8 @@ public class CertManagementController {
         try {
             String sessionId = (String) payload.get("sessionId");
             KeyStore ks = getKeystoreForSession(sessionId);
-
             @SuppressWarnings("unchecked")
             Map<String, String> subjectDetails = (Map<String, String>) payload.get("subjectDetails");
-
             keystoreService.createKeyPair(ks,
                     (String) payload.get("alias"),
                     (String) payload.get("keyPassword"),
@@ -88,6 +85,19 @@ public class CertManagementController {
             return ResponseEntity.ok(keystoreService.listCertificates(ks));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating key pair: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/import-cert")
+    public ResponseEntity<?> importCertificate(@RequestParam("certFile") MultipartFile file,
+                                               @RequestParam("alias") String alias,
+                                               @RequestParam("sessionId") String sessionId) {
+        try {
+            KeyStore ks = getKeystoreForSession(sessionId);
+            keystoreService.importCertificate(ks, alias, file.getBytes());
+            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error importing certificate: " + e.getMessage()));
         }
     }
 
@@ -112,10 +122,8 @@ public class CertManagementController {
             String alias = payload.get("alias");
             String keyPassword = payload.get("keyPassword");
             String encryptionPassword = payload.get("encryptionPassword");
-
             KeyStore ks = getKeystoreForSession(sessionId);
             byte[] keyBytes = keystoreService.exportPrivateKey(ks, alias, keyPassword, encryptionPassword);
-
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + "_key.pem\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -140,7 +148,7 @@ public class CertManagementController {
     public ResponseEntity<byte[]> downloadKeystore(@RequestParam String sessionId) {
         try {
             KeyStore ks = getKeystoreForSession(sessionId);
-            String password = keystorePasswords.get(sessionId);
+            String password = getPasswordForSession(sessionId);
             byte[] keystoreBytes = keystoreService.saveKeyStore(ks, password);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"keystore.jks\"")

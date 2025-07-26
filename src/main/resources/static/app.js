@@ -26,6 +26,13 @@ const api = {
             body: JSON.stringify(data),
         });
     },
+    importCertificate: (file, alias, sessionId) => {
+        const formData = new FormData();
+        formData.append('certFile', file);
+        formData.append('alias', alias);
+        formData.append('sessionId', sessionId);
+        return fetch(`${API_BASE_URL}/keystore/import-cert`, { method: 'POST', body: formData });
+    },
     deleteEntry: (alias, sessionId) => {
         return fetch(`${API_BASE_URL}/keystore/entry/${alias}?sessionId=${sessionId}`, { method: 'DELETE' });
     },
@@ -138,13 +145,13 @@ const WelcomeScreen = ({ handleCreate, handleUpload, setLoading, setError }) => 
     );
 };
 
-const CertificateTable = ({ certificates, handleDelete, handleExport }) => {
+const CertificateTable = ({ certificates, handleDelete, handleExport, handleView }) => {
     if (certificates.length === 0) {
         return (
             <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
                 <i className="fas fa-box-open text-4xl text-slate-400 dark:text-slate-500 mb-4"></i>
                 <h3 className="text-xl font-semibold text-slate-700 dark:text-slate-300">Keystore is Empty</h3>
-                <p className="text-slate-500 dark:text-slate-400 mt-1">Create a key pair or import a certificate to get started.</p>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">Create or import a certificate to get started.</p>
             </div>
         );
     }
@@ -183,6 +190,9 @@ const CertificateTable = ({ certificates, handleDelete, handleExport }) => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm">{getStatusBadge(cert.status)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{formatDate(cert.notAfter)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                <button onClick={() => handleView(cert)} className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition">
+                                    <i className="fas fa-eye mr-1"></i>View
+                                </button>
                                 <button onClick={() => handleExport(cert)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition">
                                     <i className="fas fa-file-export mr-1"></i>Export
                                 </button>
@@ -291,7 +301,6 @@ const ExportModal = ({ isOpen, onClose, certificate, sessionId, setError }) => {
     const [encryptionPassword, setEncryptionPassword] = useState('');
 
     useEffect(() => {
-        // Reset state when a new certificate is selected for export
         setExportType('cert');
         setCertFormat('pem');
         setKeyPassword('');
@@ -379,9 +388,95 @@ const ExportModal = ({ isOpen, onClose, certificate, sessionId, setError }) => {
     );
 };
 
+const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
+    if (!isOpen) return null;
+
+    const Detail = ({ label, value }) => (
+        <div>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="text-sm text-slate-900 dark:text-white break-words">{value}</p>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl m-4 max-h-[90vh] overflow-y-auto">
+                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Certificate Details: {certificate.alias}</h2>
+
+                <div className="space-y-6">
+                    {certificate.chain.map((cert, index) => (
+                        <div key={index} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                            <h3 className="text-lg font-semibold mb-2 text-indigo-600 dark:text-indigo-400">
+                                {index === 0 ? 'End-Entity Certificate' : `Intermediate Certificate ${index}`}
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <Detail label="Subject" value={cert.subject} />
+                                <Detail label="Issuer" value={cert.issuer} />
+                                <Detail label="Serial Number" value={cert.serialNumber} />
+                                <Detail label="Signature Algorithm" value={cert.signatureAlgorithm} />
+                                <Detail label="Valid From" value={new Date(cert.notBefore).toLocaleString()} />
+                                <Detail label="Valid To" value={new Date(cert.notAfter).toLocaleString()} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex justify-end pt-6">
+                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-white bg-slate-600 hover:bg-slate-700 transition">Close</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ImportCertificateModal = ({ isOpen, onClose, handleImport }) => {
+    const [alias, setAlias] = useState('');
+    const [file, setFile] = useState(null);
+
+    if (!isOpen) return null;
+
+    const onFileChange = (e) => {
+        if (e.target.files.length > 0) {
+            setFile(e.target.files[0]);
+        }
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (file && alias) {
+            handleImport(file, alias);
+            onClose();
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md m-4">
+                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Import Certificate</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Alias</label>
+                        <input type="text" value={alias} onChange={e => setAlias(e.target.value)} required className="mt-1 w-full form-input"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Certificate File</label>
+                        <input type="file" onChange={onFileChange} accept=".pem,.cer,.crt,.der" required className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/50 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900"/>
+                    </div>
+                    <div className="flex justify-end space-x-4 pt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition">Cancel</button>
+                        <button type="submit" className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition">Import</button>
+                    </div>
+                </form>
+            </div>
+            <style>{`.form-input { padding: 0.5rem 0.75rem; border-radius: 0.375rem; border: 1px solid #cbd5e1; background-color: white; } .dark .form-input { border-color: #475569; background-color: #334155; color: white; }`}</style>
+        </div>
+    );
+};
 
 const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setError, endSession }) => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [viewCert, setViewCert] = useState(null);
     const [exportCert, setExportCert] = useState(null);
 
     const handleCreateKeyPair = async (data) => {
@@ -391,6 +486,21 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
             const res = await api.createKeyPair({ ...data, sessionId });
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to create key pair.');
+            setCertificates(result);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleImport = async (file, alias) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await api.importCertificate(file, alias, sessionId);
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'Failed to import certificate.');
             setCertificates(result);
         } catch (err) {
             setError(err.message);
@@ -425,12 +535,15 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Keystore Dashboard</h1>
                 <div className="flex space-x-3">
                     <button onClick={() => setIsCreateModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition"><i className="fas fa-key mr-2"></i>Create Key Pair</button>
+                    <button onClick={() => setIsImportModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-teal-600 hover:bg-teal-700 transition"><i className="fas fa-file-import mr-2"></i>Import Certificate</button>
                     <button onClick={downloadKeystore} className="px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 transition"><i className="fas fa-save mr-2"></i>Save Keystore</button>
                     <button onClick={endSession} className="px-4 py-2 rounded-md text-slate-700 bg-slate-200 hover:bg-slate-300 dark:text-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition"><i className="fas fa-sign-out-alt mr-2"></i>End Session</button>
                 </div>
             </div>
-            <CertificateTable certificates={certificates} handleDelete={handleDelete} handleExport={setExportCert} />
+            <CertificateTable certificates={certificates} handleDelete={handleDelete} handleExport={setExportCert} handleView={setViewCert} />
             <CreateKeyPairModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} handleCreateKeyPair={handleCreateKeyPair} />
+            <ImportCertificateModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} handleImport={handleImport} />
+            {viewCert && <CertificateViewModal isOpen={true} onClose={() => setViewCert(null)} certificate={viewCert} />}
             {exportCert && <ExportModal isOpen={true} onClose={() => setExportCert(null)} certificate={exportCert} sessionId={sessionId} setError={setError} />}
         </div>
     );
@@ -493,7 +606,7 @@ function App() {
                 )}
                 {error && (
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-                        <div className="bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-200 p-4 rounded-md" role="alert">
+                        <div className="bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-200 p-4 rounded-md relative" role="alert">
                             <p className="font-bold">Error</p>
                             <p>{error}</p>
                             <button onClick={() => setError(null)} className="absolute top-0 bottom-0 right-0 px-4 py-3">

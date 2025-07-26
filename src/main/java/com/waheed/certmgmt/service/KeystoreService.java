@@ -16,9 +16,6 @@ import org.bouncycastle.openssl.jcajce.JcaPKCS8Generator;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OutputEncryptor;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.pkcs.PKCS10CertificationRequest;
-import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
-import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEOutputEncryptorBuilder;
 import org.bouncycastle.util.io.pem.PemObject;
 import org.bouncycastle.util.io.pem.PemWriter;
@@ -31,7 +28,6 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
@@ -42,10 +38,6 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Service class for managing JKS keystores using Bouncy Castle.
- * This includes loading, saving, and manipulating keystore entries.
- */
 @Service
 public class KeystoreService {
 
@@ -78,59 +70,74 @@ public class KeystoreService {
         if (cert.getNotAfter().before(now)) {
             return "EXPIRED";
         }
-        long daysUntilExpiry = ChronoUnit.DAYS.between(now.toInstant(), cert.getNotAfter().toInstant());
-        if (daysUntilExpiry <= 30) {
+        if (cert.getNotAfter().before(Date.from(Instant.now().plus(30, ChronoUnit.DAYS)))) {
             return "WARNING";
         }
         return "VALID";
     }
 
-    public List<CertificateDetails> listCertificates(KeyStore ks) throws KeyStoreException {
+    public List<CertificateDetails> listCertificates(KeyStore ks) throws Exception {
         List<CertificateDetails> certDetailsList = new ArrayList<>();
         Enumeration<String> aliases = ks.aliases();
         while (aliases.hasMoreElements()) {
             String alias = aliases.nextElement();
-            CertificateDetails details;
-            if (ks.isKeyEntry(alias)) {
-                Certificate[] chain = ks.getCertificateChain(alias);
-                if (chain != null && chain.length > 0 && chain[0] instanceof X509Certificate x509Cert) {
-                    details = new CertificateDetails(
-                            alias,
-                            x509Cert.getSubjectX500Principal().getName(),
-                            x509Cert.getIssuerX500Principal().getName(),
-                            x509Cert.getNotBefore(),
-                            x509Cert.getNotAfter(),
-                            x509Cert.getSerialNumber().toString(),
-                            x509Cert.getSigAlgName(),
-                            "Key Pair (Private Key & Certificate)",
-                            getCertificateStatus(x509Cert)
-                    );
-                } else {
-                    details = new CertificateDetails(alias, "N/A", "N/A", null, null, "N/A", "N/A", "Key Entry (no Certificate)", "UNKNOWN");
-                }
-            } else if (ks.isCertificateEntry(alias)) {
-                Certificate cert = ks.getCertificate(alias);
-                if (cert instanceof X509Certificate x509Cert) {
-                    details = new CertificateDetails(
-                            alias,
-                            x509Cert.getSubjectX500Principal().getName(),
-                            x509Cert.getIssuerX500Principal().getName(),
-                            x509Cert.getNotBefore(),
-                            x509Cert.getNotAfter(),
-                            x509Cert.getSerialNumber().toString(),
-                            x509Cert.getSigAlgName(),
-                            "Trusted Certificate",
-                            getCertificateStatus(x509Cert)
-                    );
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
+            CertificateDetails details = buildCertificateDetails(ks, alias);
+            if (details != null) {
+                certDetailsList.add(details);
             }
-            certDetailsList.add(details);
         }
         return certDetailsList;
+    }
+
+    private CertificateDetails buildCertificateDetails(KeyStore ks, String alias) throws Exception {
+        String entryType;
+        Certificate[] chain;
+
+        if (ks.isKeyEntry(alias)) {
+            entryType = "Key Pair (Private Key & Certificate)";
+            chain = ks.getCertificateChain(alias);
+        } else if (ks.isCertificateEntry(alias)) {
+            entryType = "Trusted Certificate";
+            chain = new Certificate[]{ks.getCertificate(alias)};
+        } else {
+            return null; // Skip unknown entry types
+        }
+
+        if (chain == null || chain.length == 0 || !(chain[0] instanceof X509Certificate)) {
+            return new CertificateDetails(alias, "N/A", "N/A", null, null, "N/A", "N/A", entryType, "UNKNOWN", null);
+        }
+
+        X509Certificate primaryCert = (X509Certificate) chain[0];
+        List<CertificateDetails> chainDetails = new ArrayList<>();
+        for (Certificate cert : chain) {
+            if (cert instanceof X509Certificate x509Cert) {
+                chainDetails.add(new CertificateDetails(
+                        alias,
+                        x509Cert.getSubjectX500Principal().getName(),
+                        x509Cert.getIssuerX500Principal().getName(),
+                        x509Cert.getNotBefore(),
+                        x509Cert.getNotAfter(),
+                        x509Cert.getSerialNumber().toString(),
+                        x509Cert.getSigAlgName(),
+                        entryType,
+                        getCertificateStatus(x509Cert),
+                        null
+                ));
+            }
+        }
+
+        return new CertificateDetails(
+                alias,
+                primaryCert.getSubjectX500Principal().getName(),
+                primaryCert.getIssuerX500Principal().getName(),
+                primaryCert.getNotBefore(),
+                primaryCert.getNotAfter(),
+                primaryCert.getSerialNumber().toString(),
+                primaryCert.getSigAlgName(),
+                entryType,
+                getCertificateStatus(primaryCert),
+                chainDetails
+        );
     }
 
     public KeyPairDetails createKeyPair(KeyStore ks, String alias, String keyPassword, Map<String, String> subjectDetails, int keySize, String sigAlg) throws Exception {
@@ -147,25 +154,23 @@ public class KeystoreService {
         nameBuilder.addRDN(BCStyle.C, subjectDetails.get("C"));
         X500Name subject = nameBuilder.build();
 
-        BigInteger serial = new BigInteger(64, new SecureRandom());
-        Date notBefore = Date.from(Instant.now());
+        BigInteger serial = new BigInteger(160, new SecureRandom());
+        Date notBefore = new Date();
         Date notAfter = Date.from(Instant.now().plus(365, ChronoUnit.DAYS));
 
-        ContentSigner contentSigner = new JcaContentSignerBuilder(sigAlg)
-                .setProvider(BC_PROVIDER)
-                .build(keyPair.getPrivate());
-
-        X509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
-                subject, serial, notBefore, notAfter, subject, keyPair.getPublic());
-
+        ContentSigner contentSigner = new JcaContentSignerBuilder(sigAlg).setProvider(BC_PROVIDER).build(keyPair.getPrivate());
+        X509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(subject, serial, notBefore, notAfter, subject, keyPair.getPublic());
         X509CertificateHolder certHolder = certBuilder.build(contentSigner);
-        X509Certificate cert = new JcaX509CertificateConverter()
-                .setProvider(BC_PROVIDER)
-                .getCertificate(certHolder);
+        X509Certificate cert = new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(certHolder);
 
         ks.setKeyEntry(alias, keyPair.getPrivate(), keyPassword.toCharArray(), new Certificate[]{cert});
-
         return new KeyPairDetails(alias, subjectDetails.get("CN"), keySize, cert);
+    }
+
+    public void importCertificate(KeyStore ks, String alias, byte[] certData) throws Exception {
+        CertificateFactory certFactory = CertificateFactory.getInstance("X.509", BC_PROVIDER);
+        Certificate cert = certFactory.generateCertificate(new ByteArrayInputStream(certData));
+        ks.setCertificateEntry(alias, cert);
     }
 
     public byte[] exportCertificate(KeyStore ks, String alias, String format) throws Exception {
