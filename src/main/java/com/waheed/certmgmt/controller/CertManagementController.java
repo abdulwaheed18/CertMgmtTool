@@ -15,11 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * REST Controller for Certificate and Keystore Management.
- *
- * NOTE: For demonstration purposes, this controller uses a simple in-memory map
- * to store keystores, identified by a session ID. In a real enterprise application,
- * this would be replaced with a secure vault (e.g., HashiCorp Vault, Azure Key Vault)
- * and proper user authentication with JWTs or similar tokens.
  */
 @RestController
 @RequestMapping("/api/v1/keystore")
@@ -29,8 +24,6 @@ public class CertManagementController {
     @Autowired
     private KeystoreService keystoreService;
 
-    // WARNING: This is NOT a production-ready way to handle sessions or secrets.
-    // It's a simplified mechanism for this demonstration.
     private final Map<String, KeyStore> activeKeystores = new ConcurrentHashMap<>();
     private final Map<String, String> keystorePasswords = new ConcurrentHashMap<>();
 
@@ -40,14 +33,6 @@ public class CertManagementController {
             throw new IllegalStateException("No active keystore found for this session. Please upload or create one.");
         }
         return ks;
-    }
-
-    private String getPasswordForSession(String sessionId) {
-        String password = keystorePasswords.get(sessionId);
-        if (password == null) {
-            throw new IllegalStateException("No keystore password found for this session.");
-        }
-        return password;
     }
 
     @PostMapping("/upload")
@@ -85,28 +70,58 @@ public class CertManagementController {
         }
     }
 
-    @GetMapping("/certificates")
-    public ResponseEntity<?> listCertificates(@RequestParam String sessionId) {
-        try {
-            return ResponseEntity.ok(keystoreService.listCertificates(getKeystoreForSession(sessionId)));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
     @PostMapping("/create-keypair")
-    public ResponseEntity<?> createKeyPair(@RequestBody Map<String, String> payload) {
+    public ResponseEntity<?> createKeyPair(@RequestBody Map<String, Object> payload) {
         try {
-            String sessionId = payload.get("sessionId");
+            String sessionId = (String) payload.get("sessionId");
             KeyStore ks = getKeystoreForSession(sessionId);
+
+            @SuppressWarnings("unchecked")
+            Map<String, String> subjectDetails = (Map<String, String>) payload.get("subjectDetails");
+
             keystoreService.createKeyPair(ks,
-                    payload.get("alias"),
-                    payload.get("keyPassword"),
-                    payload.get("commonName"),
-                    Integer.parseInt(payload.get("keySize")));
+                    (String) payload.get("alias"),
+                    (String) payload.get("keyPassword"),
+                    subjectDetails,
+                    Integer.parseInt((String) payload.get("keySize")),
+                    (String) payload.get("sigAlg"));
             return ResponseEntity.ok(keystoreService.listCertificates(ks));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating key pair: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/export-cert/{alias}")
+    public ResponseEntity<?> exportCertificate(@PathVariable String alias, @RequestParam String format, @RequestParam String sessionId) {
+        try {
+            KeyStore ks = getKeystoreForSession(sessionId);
+            byte[] certBytes = keystoreService.exportCertificate(ks, alias, format);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + "." + (format.equals("pem") ? "pem" : "cer") + "\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(certBytes);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error exporting certificate: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/export-private-key")
+    public ResponseEntity<?> exportPrivateKey(@RequestBody Map<String, String> payload) {
+        try {
+            String sessionId = payload.get("sessionId");
+            String alias = payload.get("alias");
+            String keyPassword = payload.get("keyPassword");
+            String encryptionPassword = payload.get("encryptionPassword");
+
+            KeyStore ks = getKeystoreForSession(sessionId);
+            byte[] keyBytes = keystoreService.exportPrivateKey(ks, alias, keyPassword, encryptionPassword);
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + "_key.pem\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(keyBytes);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error exporting private key: " + e.getMessage()));
         }
     }
 
@@ -125,7 +140,7 @@ public class CertManagementController {
     public ResponseEntity<byte[]> downloadKeystore(@RequestParam String sessionId) {
         try {
             KeyStore ks = getKeystoreForSession(sessionId);
-            String password = getPasswordForSession(sessionId);
+            String password = keystorePasswords.get(sessionId);
             byte[] keystoreBytes = keystoreService.saveKeyStore(ks, password);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"keystore.jks\"")

@@ -18,4 +18,5 @@ public class CertificateDetails {
     private String serialNumber;
     private String signatureAlgorithm;
     private String entryType; // e.g., "Certificate", "Key Entry"
+    private String status; // e.g., "VALID", "EXPIRED", "WARNING"
 }
