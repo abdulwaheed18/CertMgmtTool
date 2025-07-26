@@ -36,6 +36,13 @@ const api = {
     deleteEntry: (alias, sessionId) => {
         return fetch(`${API_BASE_URL}/keystore/entry/${alias}?sessionId=${sessionId}`, { method: 'DELETE' });
     },
+    generateCsr: (data) => {
+        return fetch(`${API_BASE_URL}/keystore/generate-csr`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+    },
     exportPrivateKey: (data) => {
         return fetch(`${API_BASE_URL}/keystore/export-private-key`, {
             method: 'POST',
@@ -43,6 +50,10 @@ const api = {
             body: JSON.stringify(data),
         });
     },
+};
+
+const copyToClipboard = (text, onCopy) => {
+    navigator.clipboard.writeText(text).then(onCopy).catch(err => console.error('Failed to copy text: ', err));
 };
 
 // --- UI Components ---
@@ -145,7 +156,30 @@ const WelcomeScreen = ({ handleCreate, handleUpload, setLoading, setError }) => 
     );
 };
 
-const CertificateTable = ({ certificates, handleDelete, handleExport, handleView }) => {
+const DashboardStats = ({ stats }) => {
+    const statItems = [
+        { label: 'Total Certificates', value: stats.total, icon: 'fa-shield-halved', color: 'text-blue-500' },
+        { label: 'Valid', value: stats.valid, icon: 'fa-check-circle', color: 'text-green-500' },
+        { label: 'Expires Soon', value: stats.warning, icon: 'fa-exclamation-triangle', color: 'text-yellow-500' },
+        { label: 'Expired', value: stats.expired, icon: 'fa-times-circle', color: 'text-red-500' },
+    ];
+
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {statItems.map(item => (
+                <div key={item.label} className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md flex items-center space-x-4">
+                    <i className={`fas ${item.icon} text-3xl ${item.color}`}></i>
+                    <div>
+                        <p className="text-3xl font-bold text-slate-900 dark:text-white">{item.value}</p>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{item.label}</p>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const CertificateTable = ({ certificates, handleDelete, handleExport, handleView, handleGenerateCsr }) => {
     if (certificates.length === 0) {
         return (
             <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
@@ -171,6 +205,8 @@ const CertificateTable = ({ certificates, handleDelete, handleExport, handleView
         }
     };
 
+    const isKeyPair = (cert) => cert.entryType.includes('Key Pair');
+
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full bg-white dark:bg-slate-800 rounded-lg shadow-md">
@@ -186,19 +222,16 @@ const CertificateTable = ({ certificates, handleDelete, handleExport, handleView
                         <tr key={cert.alias} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">{cert.alias}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 max-w-xs truncate" title={cert.subject}>{cert.subject}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{cert.entryType.includes('Key Pair') ? 'Private Key' : 'Public Key'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{isKeyPair(cert) ? 'Key Pair' : 'Trusted Cert'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">{getStatusBadge(cert.status)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{formatDate(cert.notAfter)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                <button onClick={() => handleView(cert)} className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition">
-                                    <i className="fas fa-eye mr-1"></i>View
-                                </button>
-                                <button onClick={() => handleExport(cert)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition">
-                                    <i className="fas fa-file-export mr-1"></i>Export
-                                </button>
-                                <button onClick={() => handleDelete(cert.alias)} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition">
-                                    <i className="fas fa-trash-alt mr-1"></i>Delete
-                                </button>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                 <div className="flex items-center space-x-3">
+                                    <button onClick={() => handleView(cert)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="View Details"><i className="fas fa-eye"></i></button>
+                                    <button onClick={() => handleExport(cert)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="Export"><i className="fas fa-file-export"></i></button>
+                                    {isKeyPair(cert) && <button onClick={() => handleGenerateCsr(cert.alias)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="Generate CSR"><i className="fas fa-file-signature"></i></button>}
+                                    <button onClick={() => handleDelete(cert.alias)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300" title="Delete"><i className="fas fa-trash-alt"></i></button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -290,6 +323,73 @@ const CreateKeyPairModal = ({ isOpen, onClose, handleCreateKeyPair }) => {
                 </form>
             </div>
              <style>{`.form-input { padding: 0.5rem 0.75rem; border-radius: 0.375rem; border: 1px solid #cbd5e1; background-color: white; } .dark .form-input { border-color: #475569; background-color: #334155; color: white; }`}</style>
+        </div>
+    );
+};
+
+const GenerateCsrModal = ({ isOpen, onClose, alias, sessionId, setError }) => {
+    const [keyPassword, setKeyPassword] = useState('');
+    const [csr, setCsr] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [copyButtonText, setCopyButtonText] = useState('Copy');
+
+    if (!isOpen) return null;
+
+    const handleGenerate = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setCsr('');
+        try {
+            const res = await api.generateCsr({ alias, keyPassword, sessionId });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to generate CSR.');
+            }
+            const blob = await res.blob();
+            const text = await blob.text();
+            setCsr(text);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCopy = () => {
+        copyToClipboard(csr, () => {
+            setCopyButtonText('Copied!');
+            setTimeout(() => setCopyButtonText('Copy'), 2000);
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl m-4">
+                <h2 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Generate CSR for: {alias}</h2>
+                {!csr ? (
+                    <form onSubmit={handleGenerate}>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Key Password</label>
+                        <input type="password" value={keyPassword} onChange={e => setKeyPassword(e.target.value)} required className="mt-1 w-full form-input" placeholder="Password for this key entry"/>
+                        <div className="flex justify-end space-x-4 pt-6">
+                            <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition">Cancel</button>
+                            <button type="submit" disabled={loading} className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition flex items-center">
+                                {loading && <i className="fas fa-spinner fa-spin mr-2"></i>}
+                                Generate
+                            </button>
+                        </div>
+                    </form>
+                ) : (
+                    <div>
+                        <textarea readOnly value={csr} className="w-full h-64 font-mono text-sm p-2 border rounded-md bg-slate-100 dark:bg-slate-700 dark:border-slate-600"></textarea>
+                        <div className="flex justify-end space-x-4 pt-4">
+                             <button type="button" onClick={handleCopy} className="px-4 py-2 rounded-md text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition">{copyButtonText}</button>
+                            <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-white bg-slate-600 hover:bg-slate-700 transition">Close</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <style>{`.form-input { padding: 0.5rem 0.75rem; border-radius: 0.375rem; border: 1px solid #cbd5e1; background-color: white; } .dark .form-input { border-color: #475569; background-color: #334155; color: white; }`}</style>
         </div>
     );
 };
@@ -391,6 +491,14 @@ const ExportModal = ({ isOpen, onClose, certificate, sessionId, setError }) => {
 const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
     if (!isOpen) return null;
 
+    const parseDn = (dn) => {
+        if (!dn) return [];
+        return dn.split(',').map(part => {
+            const [key, ...value] = part.split('=');
+            return { key: key.trim(), value: value.join('=').trim() };
+        });
+    };
+
     const Detail = ({ label, value }) => (
         <div>
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
@@ -398,20 +506,29 @@ const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
         </div>
     );
 
+    const DnDetails = ({ title, dn }) => (
+        <div>
+            <h4 className="text-md font-semibold text-slate-700 dark:text-slate-300 mb-2">{title}</h4>
+            <div className="space-y-1 text-sm pl-2 border-l-2 dark:border-slate-600">
+                {parseDn(dn).map(({key, value}) => <p key={key}><span className="font-semibold text-slate-500 dark:text-slate-400">{key} = </span>{value}</p>)}
+            </div>
+        </div>
+    );
+
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl m-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-3xl m-4 max-h-[90vh] overflow-y-auto">
                 <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Certificate Details: {certificate.alias}</h2>
 
                 <div className="space-y-6">
                     {certificate.chain.map((cert, index) => (
                         <div key={index} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                            <h3 className="text-lg font-semibold mb-2 text-indigo-600 dark:text-indigo-400">
+                            <h3 className="text-lg font-semibold mb-3 text-indigo-600 dark:text-indigo-400">
                                 {index === 0 ? 'End-Entity Certificate' : `Intermediate Certificate ${index}`}
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Detail label="Subject" value={cert.subject} />
-                                <Detail label="Issuer" value={cert.issuer} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                                <DnDetails title="Subject" dn={cert.subject} />
+                                <DnDetails title="Issuer" dn={cert.issuer} />
                                 <Detail label="Serial Number" value={cert.serialNumber} />
                                 <Detail label="Signature Algorithm" value={cert.signatureAlgorithm} />
                                 <Detail label="Valid From" value={new Date(cert.notBefore).toLocaleString()} />
@@ -473,11 +590,14 @@ const ImportCertificateModal = ({ isOpen, onClose, handleImport }) => {
     );
 };
 
-const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setError, endSession }) => {
+const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, setError, endSession }) => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [viewCert, setViewCert] = useState(null);
     const [exportCert, setExportCert] = useState(null);
+    const [csrAlias, setCsrAlias] = useState(null);
+
+    const { certificates, stats } = dashboardData;
 
     const handleCreateKeyPair = async (data) => {
         setLoading(true);
@@ -486,7 +606,7 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
             const res = await api.createKeyPair({ ...data, sessionId });
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to create key pair.');
-            setCertificates(result);
+            setDashboardData(result);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -501,7 +621,7 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
             const res = await api.importCertificate(file, alias, sessionId);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to import certificate.');
-            setCertificates(result);
+            setDashboardData(result);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -517,7 +637,7 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
             const res = await api.deleteEntry(alias, sessionId);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to delete entry.');
-            setCertificates(result);
+            setDashboardData(result);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -540,11 +660,22 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
                     <button onClick={endSession} className="px-4 py-2 rounded-md text-slate-700 bg-slate-200 hover:bg-slate-300 dark:text-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition"><i className="fas fa-sign-out-alt mr-2"></i>End Session</button>
                 </div>
             </div>
-            <CertificateTable certificates={certificates} handleDelete={handleDelete} handleExport={setExportCert} handleView={setViewCert} />
+
+            <DashboardStats stats={stats} />
+
+            <CertificateTable
+                certificates={certificates}
+                handleDelete={handleDelete}
+                handleExport={setExportCert}
+                handleView={setViewCert}
+                handleGenerateCsr={setCsrAlias}
+             />
+
             <CreateKeyPairModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} handleCreateKeyPair={handleCreateKeyPair} />
             <ImportCertificateModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} handleImport={handleImport} />
             {viewCert && <CertificateViewModal isOpen={true} onClose={() => setViewCert(null)} certificate={viewCert} />}
             {exportCert && <ExportModal isOpen={true} onClose={() => setExportCert(null)} certificate={exportCert} sessionId={sessionId} setError={setError} />}
+            {csrAlias && <GenerateCsrModal isOpen={true} onClose={() => setCsrAlias(null)} alias={csrAlias} sessionId={sessionId} setError={setError} />}
         </div>
     );
 };
@@ -553,7 +684,7 @@ const Dashboard = ({ certificates, sessionId, setCertificates, setLoading, setEr
 // --- Main App Component ---
 function App() {
     const [sessionId, setSessionId] = useState(null);
-    const [certificates, setCertificates] = useState([]);
+    const [dashboardData, setDashboardData] = useState({ certificates: [], stats: { total: 0, valid: 0, warning: 0, expired: 0 } });
     const [isKeystoreLoaded, setIsKeystoreLoaded] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -571,7 +702,7 @@ function App() {
             if (!response.ok) {
                 throw new Error(result.error || 'An unknown error occurred.');
             }
-            setCertificates(result);
+            setDashboardData(result);
             setIsKeystoreLoaded(true);
         } catch (err) {
             setError(err.message);
@@ -590,7 +721,7 @@ function App() {
     };
 
     const endSession = () => {
-        setCertificates([]);
+        setDashboardData({ certificates: [], stats: { total: 0, valid: 0, warning: 0, expired: 0 } });
         setIsKeystoreLoaded(false);
         setError(null);
     };
@@ -625,9 +756,9 @@ function App() {
                     />
                 ) : (
                     <Dashboard
-                        certificates={certificates}
+                        dashboardData={dashboardData}
                         sessionId={sessionId}
-                        setCertificates={setCertificates}
+                        setDashboardData={setDashboardData}
                         setLoading={setLoading}
                         setError={setError}
                         endSession={endSession}

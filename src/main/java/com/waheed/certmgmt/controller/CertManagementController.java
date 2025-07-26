@@ -21,8 +21,11 @@ public class CertManagementController {
     @Autowired
     private KeystoreService keystoreService;
 
+    // This is a placeholder for a real user session mechanism (e.g., from Spring Security)
     private final Map<String, KeyStore> activeKeystores = new ConcurrentHashMap<>();
     private final Map<String, String> keystorePasswords = new ConcurrentHashMap<>();
+    private static final String MOCK_SESSION_ID = "user-session-123";
+
 
     private KeyStore getKeystoreForSession(String sessionId) {
         KeyStore ks = activeKeystores.get(sessionId);
@@ -40,6 +43,14 @@ public class CertManagementController {
         return password;
     }
 
+    private ResponseEntity<?> getDashboardDetails(KeyStore ks) throws Exception {
+        Map<String, Object> response = Map.of(
+                "certificates", keystoreService.listCertificates(ks),
+                "stats", keystoreService.getKeystoreStats(ks)
+        );
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/upload")
     public ResponseEntity<?> handleKeystoreUpload(@RequestParam("keystoreFile") MultipartFile file,
                                                   @RequestParam("keystorePassword") String password,
@@ -48,7 +59,7 @@ public class CertManagementController {
             KeyStore ks = keystoreService.loadKeyStore(file.getBytes(), password);
             activeKeystores.put(sessionId, ks);
             keystorePasswords.put(sessionId, password);
-            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+            return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Failed to load keystore: " + e.getMessage()));
         }
@@ -63,7 +74,7 @@ public class CertManagementController {
             ks.load(null, password.toCharArray());
             activeKeystores.put(sessionId, ks);
             keystorePasswords.put(sessionId, password);
-            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+            return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating new keystore: " + e.getMessage()));
         }
@@ -82,7 +93,7 @@ public class CertManagementController {
                     subjectDetails,
                     Integer.parseInt((String) payload.get("keySize")),
                     (String) payload.get("sigAlg"));
-            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+            return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating key pair: " + e.getMessage()));
         }
@@ -95,7 +106,7 @@ public class CertManagementController {
         try {
             KeyStore ks = getKeystoreForSession(sessionId);
             keystoreService.importCertificate(ks, alias, file.getBytes());
-            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+            return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error importing certificate: " + e.getMessage()));
         }
@@ -112,6 +123,23 @@ public class CertManagementController {
                     .body(certBytes);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error exporting certificate: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/generate-csr")
+    public ResponseEntity<?> generateCsr(@RequestBody Map<String, String> payload) {
+        try {
+            String sessionId = payload.get("sessionId");
+            String alias = payload.get("alias");
+            String keyPassword = payload.get("keyPassword");
+            KeyStore ks = getKeystoreForSession(sessionId);
+            byte[] csrBytes = keystoreService.generateCsr(ks, alias, keyPassword);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + ".csr\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(csrBytes);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error generating CSR: " + e.getMessage()));
         }
     }
 
@@ -138,7 +166,7 @@ public class CertManagementController {
         try {
             KeyStore ks = getKeystoreForSession(sessionId);
             keystoreService.deleteEntry(ks, alias);
-            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+            return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error deleting entry: " + e.getMessage()));
         }

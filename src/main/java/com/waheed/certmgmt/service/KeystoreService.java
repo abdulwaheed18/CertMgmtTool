@@ -16,6 +16,8 @@ import org.bouncycastle.openssl.jcajce.JcaPKCS8Generator;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OutputEncryptor;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder;
+import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEOutputEncryptorBuilder;
 import org.bouncycastle.util.io.pem.PemObject;
 import org.bouncycastle.util.io.pem.PemWriter;
@@ -32,11 +34,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class KeystoreService {
@@ -87,6 +85,26 @@ public class KeystoreService {
             }
         }
         return certDetailsList;
+    }
+
+    public Map<String, Integer> getKeystoreStats(KeyStore ks) throws Exception {
+        Map<String, Integer> stats = new HashMap<>();
+        stats.put("total", 0);
+        stats.put("valid", 0);
+        stats.put("warning", 0);
+        stats.put("expired", 0);
+
+        Enumeration<String> aliases = ks.aliases();
+        while (aliases.hasMoreElements()) {
+            String alias = aliases.nextElement();
+            Certificate cert = ks.getCertificate(alias);
+            if (cert instanceof X509Certificate x509Cert) {
+                stats.merge("total", 1, Integer::sum);
+                String status = getCertificateStatus(x509Cert).toLowerCase();
+                stats.merge(status, 1, Integer::sum);
+            }
+        }
+        return stats;
     }
 
     private CertificateDetails buildCertificateDetails(KeyStore ks, String alias) throws Exception {
@@ -189,6 +207,27 @@ public class KeystoreService {
             }
             default -> throw new IllegalArgumentException("Unsupported export format: " + format);
         };
+    }
+
+    public byte[] generateCsr(KeyStore ks, String alias, String keyPassword) throws Exception {
+        Key key = ks.getKey(alias, keyPassword.toCharArray());
+        if (!(key instanceof PrivateKey privateKey)) {
+            throw new KeyStoreException("Alias '" + alias + "' does not contain a private key.");
+        }
+        PublicKey publicKey = ks.getCertificate(alias).getPublicKey();
+        X509Certificate cert = (X509Certificate) ks.getCertificate(alias);
+        X500Name subject = new X500Name(cert.getSubjectX500Principal().getName());
+
+        PKCS10CertificationRequestBuilder p10Builder = new JcaPKCS10CertificationRequestBuilder(subject, publicKey);
+        JcaContentSignerBuilder csBuilder = new JcaContentSignerBuilder("SHA256withRSA");
+        ContentSigner signer = csBuilder.build(privateKey);
+        var csr = p10Builder.build(signer);
+
+        StringWriter sw = new StringWriter();
+        try (JcaPEMWriter pemWriter = new JcaPEMWriter(sw)) {
+            pemWriter.writeObject(csr);
+        }
+        return sw.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     public byte[] exportPrivateKey(KeyStore ks, String alias, String keyPassword, String encryptionPassword) throws Exception {
