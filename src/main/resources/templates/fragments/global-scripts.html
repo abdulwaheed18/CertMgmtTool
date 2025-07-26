@@ -1,0 +1,107 @@
+<!-- File: src/main/resources/templates/fragments/global-scripts.html -->
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<script th:fragment="global-scripts">
+  document.addEventListener('DOMContentLoaded', () => {
+      const themeToggleBtn = document.getElementById('theme-toggle');
+      const sunIcon = document.getElementById('theme-toggle-sun-icon');
+      const moonIcon = document.getElementById('theme-toggle-moon-icon');
+
+      const applyTheme = (theme) => {
+          if (theme === 'dark') {
+              document.documentElement.classList.add('dark');
+              sunIcon?.classList.remove('hidden');
+              moonIcon?.classList.add('hidden');
+          } else {
+              document.documentElement.classList.remove('dark');
+              sunIcon?.classList.add('hidden');
+              moonIcon?.classList.remove('hidden');
+          }
+      };
+
+      themeToggleBtn?.addEventListener('click', () => {
+          const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+          localStorage.setItem('theme', newTheme);
+          applyTheme(newTheme);
+      });
+
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
+
+      const resultsSection = document.getElementById('results-section');
+      if (resultsSection) {
+          resultsSection.addEventListener('click', function(event) {
+              const button = event.target.closest('button');
+              if (!button) return;
+
+              if (button.classList.contains('copy-regex-btn')) {
+                  copyToClipboard(button.getAttribute('data-clipboard-text'), button);
+              } else if (button.classList.contains('copy-link-btn')) {
+                  const linkInput = document.getElementById('share-link-input');
+                  copyToClipboard(linkInput.value, button);
+              }
+          });
+          initializeTableControls();
+      }
+  });
+
+  function copyToClipboard(text, buttonElement) {
+      navigator.clipboard.writeText(text).then(() => {
+          const originalContent = buttonElement.innerHTML;
+          buttonElement.innerHTML = '<i class="fas fa-check text-green-500"></i>';
+          buttonElement.disabled = true;
+          setTimeout(() => {
+              buttonElement.innerHTML = originalContent;
+              buttonElement.disabled = false;
+          }, 2000);
+      }).catch(err => {
+          console.error('Failed to copy text: ', err);
+      });
+  }
+
+  function initializeTableControls() {
+      document.getElementById('filterInput')?.addEventListener('keyup', filterContent);
+      document.querySelectorAll('.filter-checkbox')?.forEach(checkbox => {
+          checkbox.addEventListener('change', filterContent);
+      });
+  }
+
+  function toggleGroup(headerElement) {
+      const details = headerElement.nextElementSibling;
+      const chevron = headerElement.querySelector('.group-chevron');
+      if (details.classList.contains('hidden')) {
+          details.classList.remove('hidden');
+          chevron.classList.add('rotate-180');
+      } else {
+          details.classList.add('hidden');
+          chevron.classList.remove('rotate-180');
+      }
+  }
+
+  function filterContent() {
+      const textFilter = document.getElementById('filterInput').value.toUpperCase();
+
+      const activeStatusFilters = new Set();
+      document.querySelectorAll('.filter-checkbox:checked').forEach(checkbox => {
+          activeStatusFilters.add(checkbox.value);
+      });
+
+      document.querySelectorAll('.result-group').forEach(group => {
+          const groupStatus = group.dataset.status;
+          const groupText = group.textContent.toUpperCase();
+
+          const statusMatch = activeStatusFilters.has(groupStatus);
+          const textMatch = groupText.includes(textFilter);
+
+          if (statusMatch && textMatch) {
+              group.style.display = '';
+          } else {
+              group.style.display = 'none';
+          }
+      });
+  }
+</script>
+</body>
+</html>

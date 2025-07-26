@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Footer</title>
+</head>
+<body>
+
+<footer th:fragment="page-footer" class="bg-gray-800 text-gray-300 mt-16">
+    <div class="container mx-auto px-4 py-12 max-w-7xl">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left">
+            <div>
+                <h3 class="text-lg font-semibold text-white mb-4">About Pattern Auditor</h3>
+                <p class="text-sm text-gray-400">
+                    This tool is designed to help developers and API designers validate and improve the quality of regular expressions within their OpenAPI specifications, ensuring cross-engine compatibility and security.
+                </p>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-semibold text-white mb-4">Quick Links</h3>
+                <ul class="space-y-2 text-sm">
+                    <li><a th:href="@{/openapiauditor}" class="hover:text-white transition-colors">Home</a></li>
+                    <li><a th:href="@{/openapiauditor/about}" class="hover:text-white transition-colors">About the Author</a></li>
+                    <li><a th:href="${appConfig.blog}" target="_blank" class="hover:text-white transition-colors">Blog</a></li>
+                </ul>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-semibold text-white mb-4">Connect</h3>
+                <div class="flex justify-center md:justify-start space-x-4">
+                    <a th:href="${appConfig.github}" target="_blank" class="text-2xl hover:text-indigo-400 transition-colors"><i class="fab fa-github"></i></a>
+                    <a th:href="${appConfig.linkedin}" target="_blank" class="text-2xl hover:text-indigo-400 transition-colors"><i class="fab fa-linkedin"></i></a>
+                    <a th:href="'mailto:' + ${appConfig.email}" class="text-2xl hover:text-indigo-400 transition-colors"><i class="fas fa-envelope"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-700 mt-8 pt-6 text-center text-sm text-gray-500">
+            <p>&copy; 2025 <span th:text="${appConfig.name}">Your Name</span>. All Rights Reserved.</p>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

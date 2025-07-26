@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style th:replace="~{fragments/global-styles :: global-styles}"></style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+<div th:replace="~{fragments/header :: page-header}"></div>
+
+<main class="flex-grow container mx-auto px-4 py-8 max-w-7xl">
+    <header class="text-center mb-10">
+        <h1 class="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 mb-2">Certificate & Keystore Management</h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300">Manage your JKS Keystores with ease.</p>
+    </header>
+
+    <div class="space-y-8">
+        <div th:if="${message}" class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md" role="alert">
+            <p class="font-bold">Success</p>
+            <p th:text="${message}"></p>
+        </div>
+        <div th:if="${error}" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md" role="alert">
+            <p class="font-bold">Error</p>
+            <p th:text="${error}"></p>
+        </div>
+
+        <div class="glass-card p-8">
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Load or Create Keystore</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">Upload Existing JKS</h3>
+                    <form th:action="@{/certmanagement/upload}" method="post" enctype="multipart/form-data" class="space-y-3">
+                        <div>
+                            <label for="keystoreFile" class="block text-sm font-medium text-gray-700 dark:text-gray-300">JKS Keystore File:</label>
+                            <input type="file" id="keystoreFile" name="keystoreFile" accept=".jks" required
+                                   class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-700 dark:file:text-indigo-100 dark:hover:file:bg-indigo-600"/>
+                        </div>
+                        <div>
+                            <label for="keystorePassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Keystore Password:</label>
+                            <input type="password" id="keystorePassword" name="keystorePassword" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <button type="submit" class="mt-4 btn-primary text-white font-semibold py-2 px-4 rounded-md"><i class="fas fa-upload mr-2"></i>Load Keystore</button>
+                    </form>
+                </div>
+
+                <div class="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">Create New Empty JKS</h3>
+                    <form th:action="@{/certmanagement/create-keystore}" method="post" class="space-y-3">
+                        <div>
+                            <label for="newKeystorePassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">New Keystore Password:</label>
+                            <input type="password" id="newKeystorePassword" name="newKeystorePassword" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <button type="submit" class="mt-4 btn-primary text-white font-semibold py-2 px-4 rounded-md"><i class="fas fa-plus-circle mr-2"></i>Create New</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div th:if="${keystoreLoaded}" class="glass-card p-8">
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Keystore Actions</h2>
+            <div class="flex flex-wrap gap-4 mb-6">
+                <a th:href="@{/certmanagement/download-keystore}" class="btn-primary text-white font-semibold py-2 px-4 rounded-md"><i class="fas fa-download mr-2"></i>Download Keystore</a>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">Create New Key Pair</h3>
+                    <form th:action="@{/certmanagement/create-keypair}" method="post" class="space-y-3">
+                        <div>
+                            <label for="kp_alias" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Alias:</label>
+                            <input type="text" id="kp_alias" name="alias" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label for="kp_keyPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Key Password:</label>
+                            <input type="password" id="kp_keyPassword" name="keyPassword" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label for="kp_commonName" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Common Name (CN):</label>
+                            <input type="text" id="kp_commonName" name="commonName" value="localhost"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label for="kp_keySize" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Key Size (bits):</label>
+                            <input type="number" id="kp_keySize" name="keySize" value="2048" min="1024" max="4096" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <button type="submit" class="mt-4 btn-primary text-white font-semibold py-2 px-4 rounded-md"><i class="fas fa-key mr-2"></i>Create Key Pair</button>
+                    </form>
+                </div>
+
+                <div class="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">Import Certificate</h3>
+                    <form th:action="@{/certmanagement/import-cert}" method="post" enctype="multipart/form-data" class="space-y-3">
+                        <div>
+                            <label for="ic_alias" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Alias:</label>
+                            <input type="text" id="ic_alias" name="alias" required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label for="certFile" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Certificate File (PEM/DER):</label>
+                            <input type="file" id="certFile" name="certFile" accept=".pem,.cer,.crt,.der" required
+                                   class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-700 dark:file:text-indigo-100 dark:hover:file:bg-indigo-600"/>
+                        </div>
+                        <div>
+                            <label for="ic_keyPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Key Password (if importing for a key entry):</label>
+                            <input type="password" id="ic_keyPassword" name="keyPassword"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+                        </div>
+                        <button type="submit" class="mt-4 btn-primary text-white font-semibold py-2 px-4 rounded-md"><i class="fas fa-file-import mr-2"></i>Import Certificate</button>
+                    </form>
+                </div>
+            </div>
+
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4 mt-8">Certificates in Keystore</h2>
+            <div th:if="${#lists.isEmpty(certificates)}" class="text-gray-500 dark:text-gray-400">No certificates found in the loaded keystore.</div>
+            <div th:unless="${#lists.isEmpty(certificates)}" class="overflow-x-auto shadow-md rounded-lg">
+                <table class="min-w-full bg-white dark:bg-gray-800">
+                    <thead class="bg-gray-200 dark:bg-gray-700">
+                    <tr>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Alias</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Subject</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Issuer</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Valid From</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Valid To</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Type</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="cert : ${certificates}" class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${cert.alias}"></td>
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${cert.subject}"></td>
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${cert.issuer}"></td>
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${#dates.format(cert.notBefore, 'yyyy-MM-dd HH:mm')}"></td>
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${#dates.format(cert.notAfter, 'yyyy-MM-dd HH:mm')}"></td>
+                        <td class="py-3 px-4 text-sm text-gray-800 dark:text-gray-200" th:text="${cert.entryType}"></td>
+                        <td class="py-3 px-4 text-sm">
+                            <div class="flex flex-wrap gap-2">
+                                <a th:href="@{/certmanagement/export-cert/{alias}(alias=${cert.alias}, format='pem')}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"><i class="fas fa-file-export mr-1"></i>PEM</a>
+                                <a th:href="@{/certmanagement/export-cert/{alias}(alias=${cert.alias}, format='der')}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"><i class="fas fa-file-export mr-1"></i>DER</a>
+                                <a th:if="${cert.entryType == 'Key Entry (with Certificate)'}" th:href="@{/certmanagement/export-csr/{alias}(alias=${cert.alias}, keyPassword=${currentKeyStorePassword}, commonName=${#strings.substringAfter(cert.subject, 'CN=')})}" class="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200"><i class="fas fa-file-signature mr-1"></i>CSR</a>
+                                <a th:if="${cert.entryType == 'Key Entry (with Certificate)'}" th:href="@{/certmanagement/export-keypair/{alias}(alias=${cert.alias}, keyPassword=${currentKeyStorePassword})}" class="text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-200"><i class="fas fa-key mr-1"></i>Key Pair</a>
+                                <form th:action="@{/certmanagement/delete-entry/{alias}(alias=${cert.alias})}" method="post" onsubmit="return confirm('Are you sure you want to delete this entry?');" class="inline">
+                                    <button type="submit" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"><i class="fas fa-trash-alt mr-1"></i>Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div th:replace="~{fragments/footer :: page-footer}"></div>
+<script th:replace="~{fragments/global-scripts :: global-scripts}"></script>
+</body>
+</html>

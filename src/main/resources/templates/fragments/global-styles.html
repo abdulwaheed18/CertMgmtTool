@@ -1,0 +1,54 @@
+<!-- File: src/main/resources/templates/fragments/global-styles.html -->
+<!DOCTYPE html>
+<html lang="en" xmlns:th="[http://www.thymeleaf.org](http://www.thymeleaf.org)">
+<body>
+<style th:fragment="global-styles">
+  :root {
+      --primary-start: #667eea;
+      --primary-end: #764ba2;
+      --background-light: #f0f2f5;
+      --text-light: #1a202c;
+      --card-bg-light: rgba(255, 255, 255, 0.7);
+      --card-border-light: rgba(255, 255, 255, 0.2);
+      --header-bg-light: rgba(255, 255, 255, 0.7);
+  }
+  html.dark {
+      --background-dark: #111827;
+      --text-dark: #e5e7eb;
+      --card-bg-dark: rgba(31, 41, 55, 0.5);
+      --card-border-dark: rgba(55, 65, 81, 0.5);
+      --header-bg-dark: rgba(17, 24, 39, 0.7);
+  }
+  body { font-family: 'Inter', sans-serif; background-color: var(--background-light); color: var(--text-light); transition: background-color 0.3s, color 0.3s; }
+  .dark body { background-color: var(--background-dark); color: var(--text-dark); }
+  .glass-card { background: var(--card-bg-light); backdrop-filter: blur(15px); border-radius: 20px; border: 1px solid var(--card-border-light); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1); transition: background-color 0.3s, border-color 0.3s; }
+  .dark .glass-card { background: var(--card-bg-dark); border: 1px solid var(--card-border-dark); }
+  .page-header { background: var(--header-bg-light); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); transition: background-color 0.3s; }
+  .dark .page-header { background: var(--header-bg-dark); }
+  .btn-primary { background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%); transition: all 0.3s ease; }
+  .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3); }
+  .file-drop-zone { border: 3px dashed #cbd5e1; transition: all 0.3s ease; }
+  .dark .file-drop-zone { border-color: #4b5563; }
+  .file-drop-zone.dragover { border-color: var(--primary-start); background-color: rgba(102, 126, 234, 0.05); transform: scale(1.02); }
+  .dark .file-drop-zone.dragover { background-color: rgba(102, 126, 234, 0.1); }
+  .checkbox-custom:checked { background-color: var(--primary-start); border-color: var(--primary-start); }
+  .checkbox-custom:checked::after { content: '✓'; color: white; font-size: 14px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .status-badge.VALID { background-color: #dcfce7; color: #166534; } .dark .status-badge.VALID { background-color: #166534; color: #dcfce7; }
+  .status-badge.ERROR { background-color: #fee2e2; color: #991b1b; } .dark .status-badge.ERROR { background-color: #991b1b; color: #fee2e2; }
+  .status-badge.WARNING { background-color: #fef3c7; color: #92400e; } .dark .status-badge.WARNING { background-color: #92400e; color: #fef3c7; }
+  .table-container { max-height: 70vh; overflow-y: auto; }
+  .table-container thead th { position: sticky; top: 0; z-index: 10; background-color: #f9fafb; cursor: pointer; transition: background-color 0.2s; }
+  .dark .table-container thead th { background-color: #1f2937; }
+  .table-container thead th .fa-sort { color: #9ca3af; }
+  .table-container thead th .fa-sort-up, .table-container thead th .fa-sort-down { color: var(--primary-start); }
+  .table-container thead th:hover { background-color: #f1f5f9; }
+  .dark .table-container thead th:hover { background-color: #374151; }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .loading-spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+  .table-container::-webkit-scrollbar { width: 8px; }
+  .table-container::-webkit-scrollbar-track { background: #f1f5f9; } .dark .table-container::-webkit-scrollbar-track { background: #374151; }
+  .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; } .dark .table-container::-webkit-scrollbar-thumb { background: #4b5563; }
+  .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; } .dark .table-container::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+</style>
+</body>
+</html>
