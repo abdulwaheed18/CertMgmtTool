@@ -1,237 +1,139 @@
 package com.waheed.certmgmt.controller;
 
-import com.waheed.certmgmt.model.CertificateDetails;
-import com.waheed.certmgmt.model.KeyPairDetails;
 import com.waheed.certmgmt.service.KeystoreService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.security.KeyStore;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-@Controller
-@RequestMapping("/certmanagement")
+/**
+ * REST Controller for Certificate and Keystore Management.
+ *
+ * NOTE: For demonstration purposes, this controller uses a simple in-memory map
+ * to store keystores, identified by a session ID. In a real enterprise application,
+ * this would be replaced with a secure vault (e.g., HashiCorp Vault, Azure Key Vault)
+ * and proper user authentication with JWTs or similar tokens.
+ */
+@RestController
+@RequestMapping("/api/v1/keystore")
+@CrossOrigin(origins = "*") // Allow all origins for local development
 public class CertManagementController {
 
     @Autowired
     private KeystoreService keystoreService;
 
-    // WARNING: Storing KeyStore and password in class fields is NOT secure for multi-user web applications.
-    // This is for demonstration of functionality. For production, consider session-scoped beans,
-    // or loading/saving the keystore for each operation, secured with proper authentication/authorization.
-    private KeyStore currentKeyStore;
-    private String currentKeyStorePassword;
+    // WARNING: This is NOT a production-ready way to handle sessions or secrets.
+    // It's a simplified mechanism for this demonstration.
+    private final Map<String, KeyStore> activeKeystores = new ConcurrentHashMap<>();
+    private final Map<String, String> keystorePasswords = new ConcurrentHashMap<>();
 
-    @GetMapping("")
-    public String showCertManagementPage(Model model) {
-        model.addAttribute("message", "Upload a JKS Keystore or create a new one.");
-        if (currentKeyStore != null) {
-            try {
-                model.addAttribute("certificates", keystoreService.listCertificates(currentKeyStore));
-                model.addAttribute("keystoreLoaded", true);
-            } catch (Exception e) {
-                model.addAttribute("error", "Error listing certificates: " + e.getMessage());
-            }
-        } else {
-            model.addAttribute("certificates", Collections.emptyList());
-            model.addAttribute("keystoreLoaded", false);
+    private KeyStore getKeystoreForSession(String sessionId) {
+        KeyStore ks = activeKeystores.get(sessionId);
+        if (ks == null) {
+            throw new IllegalStateException("No active keystore found for this session. Please upload or create one.");
         }
-        return "certmanagement"; // Corresponds to certmanagement.html
+        return ks;
+    }
+
+    private String getPasswordForSession(String sessionId) {
+        String password = keystorePasswords.get(sessionId);
+        if (password == null) {
+            throw new IllegalStateException("No keystore password found for this session.");
+        }
+        return password;
     }
 
     @PostMapping("/upload")
-    public String handleKeystoreUpload(@RequestParam("keystoreFile") MultipartFile file,
-                                       @RequestParam("keystorePassword") String password,
-                                       RedirectAttributes redirectAttributes) {
+    public ResponseEntity<?> handleKeystoreUpload(@RequestParam("keystoreFile") MultipartFile file,
+                                                  @RequestParam("keystorePassword") String password,
+                                                  @RequestParam("sessionId") String sessionId) {
         if (file.isEmpty()) {
-            redirectAttributes.addFlashAttribute("error", "Please select a keystore file to upload.");
-            return "redirect:/certmanagement";
+            return ResponseEntity.badRequest().body(Map.of("error", "Please select a keystore file."));
         }
         try {
-            currentKeyStore = keystoreService.loadKeyStore(file.getBytes(), password);
-            currentKeyStorePassword = password; // Store password for subsequent operations
-            redirectAttributes.addFlashAttribute("message", "Keystore '" + file.getOriginalFilename() + "' loaded successfully!");
+            KeyStore ks = keystoreService.loadKeyStore(file.getBytes(), password);
+            activeKeystores.put(sessionId, ks);
+            keystorePasswords.put(sessionId, password);
+            return ResponseEntity.ok(keystoreService.listCertificates(ks));
         } catch (Exception e) {
-            currentKeyStore = null; // Clear if load fails
-            currentKeyStorePassword = null;
-            redirectAttributes.addFlashAttribute("error", "Failed to load keystore: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Failed to load keystore: " + e.getMessage()));
         }
-        return "redirect:/certmanagement";
     }
 
-    @PostMapping("/create-keystore")
-    public String createNewKeystore(@RequestParam("newKeystorePassword") String newKeystorePassword,
-                                    RedirectAttributes redirectAttributes) {
-        try {
-            currentKeyStore = KeyStore.getInstance("JKS");
-            currentKeyStore.load(null, newKeystorePassword.toCharArray()); // Initialize an empty keystore
-            currentKeyStorePassword = newKeystorePassword;
-            redirectAttributes.addFlashAttribute("message", "New empty keystore created successfully!");
-        } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", "Error creating new keystore: " + e.getMessage());
+    @PostMapping("/create")
+    public ResponseEntity<?> createNewKeystore(@RequestBody Map<String, String> payload) {
+        String password = payload.get("password");
+        String sessionId = payload.get("sessionId");
+        if (password == null || sessionId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Password and sessionId are required."));
         }
-        return "redirect:/certmanagement";
+        try {
+            KeyStore ks = KeyStore.getInstance("JKS");
+            ks.load(null, password.toCharArray());
+            activeKeystores.put(sessionId, ks);
+            keystorePasswords.put(sessionId, password);
+            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating new keystore: " + e.getMessage()));
+        }
     }
 
-    @GetMapping("/download-keystore")
-    public ResponseEntity<byte[]> downloadKeystore() {
-        if (currentKeyStore == null || currentKeyStorePassword == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("No keystore loaded or password missing to save.".getBytes());
-        }
+    @GetMapping("/certificates")
+    public ResponseEntity<?> listCertificates(@RequestParam String sessionId) {
         try {
-            byte[] keystoreBytes = keystoreService.saveKeyStore(currentKeyStore, currentKeyStorePassword);
+            return ResponseEntity.ok(keystoreService.listCertificates(getKeystoreForSession(sessionId)));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/create-keypair")
+    public ResponseEntity<?> createKeyPair(@RequestBody Map<String, String> payload) {
+        try {
+            String sessionId = payload.get("sessionId");
+            KeyStore ks = getKeystoreForSession(sessionId);
+            keystoreService.createKeyPair(ks,
+                    payload.get("alias"),
+                    payload.get("keyPassword"),
+                    payload.get("commonName"),
+                    Integer.parseInt(payload.get("keySize")));
+            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating key pair: " + e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/entry/{alias}")
+    public ResponseEntity<?> deleteEntry(@PathVariable String alias, @RequestParam String sessionId) {
+        try {
+            KeyStore ks = getKeystoreForSession(sessionId);
+            keystoreService.deleteEntry(ks, alias);
+            return ResponseEntity.ok(keystoreService.listCertificates(ks));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error deleting entry: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/download")
+    public ResponseEntity<byte[]> downloadKeystore(@RequestParam String sessionId) {
+        try {
+            KeyStore ks = getKeystoreForSession(sessionId);
+            String password = getPasswordForSession(sessionId);
+            byte[] keystoreBytes = keystoreService.saveKeyStore(ks, password);
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"mykeystore.jks\"")
-                    .contentType(MediaType.parseMediaType("application/x-java-jks"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"keystore.jks\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(keystoreBytes);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(("Error saving keystore: " + e.getMessage()).getBytes());
         }
-    }
-
-    @PostMapping("/create-keypair")
-    public String createKeyPair(@RequestParam("alias") String alias,
-                                @RequestParam("keyPassword") String keyPassword,
-                                @RequestParam("commonName") String commonName,
-                                @RequestParam("keySize") int keySize,
-                                RedirectAttributes redirectAttributes) {
-        if (currentKeyStore == null) {
-            redirectAttributes.addFlashAttribute("error", "No keystore loaded. Please upload or create one first.");
-            return "redirect:/certmanagement";
-        }
-        try {
-            KeyPairDetails details = keystoreService.createKeyPair(currentKeyStore, alias, keyPassword, commonName, keySize);
-            redirectAttributes.addFlashAttribute("message", "Key pair '" + details.getAlias() + "' created and self-signed certificate added.");
-        } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", "Error creating key pair: " + e.getMessage());
-        }
-        return "redirect:/certmanagement";
-    }
-
-    @GetMapping("/export-csr/{alias}")
-    public ResponseEntity<byte[]> exportCsr(@PathVariable String alias,
-                                            @RequestParam("keyPassword") String keyPassword,
-                                            @RequestParam("commonName") String commonName) {
-        if (currentKeyStore == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
-        try {
-            String csrContent = keystoreService.createCSR(currentKeyStore, alias, keyPassword, commonName);
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + ".csr\"")
-                    .contentType(MediaType.parseMediaType("application/x-x509-csr"))
-                    .body(csrContent.getBytes());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(("Error creating CSR: " + e.getMessage()).getBytes());
-        }
-    }
-
-    @PostMapping("/import-cert")
-    public String importCertificate(@RequestParam("alias") String alias,
-                                    @RequestParam("certFile") MultipartFile certFile,
-                                    @RequestParam(value = "keyPassword", required = false) String keyPassword,
-                                    RedirectAttributes redirectAttributes) {
-        if (currentKeyStore == null) {
-            redirectAttributes.addFlashAttribute("error", "No keystore loaded. Please upload or create one first.");
-            return "redirect:/certmanagement";
-        }
-        if (certFile.isEmpty()) {
-            redirectAttributes.addFlashAttribute("error", "Please select a certificate file to import.");
-            return "redirect:/certmanagement";
-        }
-        try {
-            keystoreService.importCertificate(currentKeyStore, alias, certFile.getBytes(), keyPassword);
-            redirectAttributes.addFlashAttribute("message", "Certificate imported successfully for alias '" + alias + "'.");
-        } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", "Error importing certificate: " + e.getMessage());
-        }
-        return "redirect:/certmanagement";
-    }
-
-    @GetMapping("/export-cert/{alias}")
-    public ResponseEntity<byte[]> exportCertificate(@PathVariable String alias, @RequestParam("format") String format) {
-        if (currentKeyStore == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
-        try {
-            byte[] certData = keystoreService.exportCertificate(currentKeyStore, alias, format);
-            String filename = alias + "." + format.toLowerCase();
-            String contentType = "application/octet-stream";
-            if ("pem".equalsIgnoreCase(format)) {
-                contentType = "application/x-pem-file";
-            } else if ("der".equalsIgnoreCase(format)) {
-                contentType = "application/pkix-cert";
-            } else if ("pkcs7".equalsIgnoreCase(format)) {
-                contentType = "application/x-pkcs7-certificates";
-            }
-
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(certData);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(("Error exporting certificate: " + e.getMessage()).getBytes());
-        }
-    }
-
-    @GetMapping("/export-keypair/{alias}")
-    public ResponseEntity<byte[]> exportKeyPair(@PathVariable String alias, @RequestParam("keyPassword") String keyPassword) {
-        if (currentKeyStore == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
-        try {
-            Map<String, byte[]> exportedFiles = keystoreService.exportKeyPairPem(currentKeyStore, alias, keyPassword);
-
-            // Create a simple zip file for both private and public keys
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
-                for (Map.Entry<String, byte[]> entry : exportedFiles.entrySet()) {
-                    java.util.zip.ZipEntry zipEntry = new java.util.zip.ZipEntry(entry.getKey());
-                    zos.putNextEntry(zipEntry);
-                    zos.write(entry.getValue());
-                    zos.closeEntry();
-                }
-            }
-
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + alias + "-keypair.zip\"")
-                    .contentType(MediaType.parseMediaType("application/zip"))
-                    .body(baos.toByteArray());
-
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(("Error exporting key pair: " + e.getMessage()).getBytes());
-        }
-    }
-
-    @PostMapping("/delete-entry/{alias}")
-    public String deleteEntry(@PathVariable String alias, RedirectAttributes redirectAttributes) {
-        if (currentKeyStore == null) {
-            redirectAttributes.addFlashAttribute("error", "No keystore loaded. Please upload or create one first.");
-            return "redirect:/certmanagement";
-        }
-        try {
-            keystoreService.deleteEntry(currentKeyStore, alias);
-            redirectAttributes.addFlashAttribute("message", "Entry '" + alias + "' deleted successfully.");
-        } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", "Error deleting entry: " + e.getMessage());
-        }
-        return "redirect:/certmanagement";
     }
 }
