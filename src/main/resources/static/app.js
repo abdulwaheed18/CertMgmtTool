@@ -33,6 +33,14 @@ const api = {
         formData.append('sessionId', sessionId);
         return fetch(`${API_BASE_URL}/keystore/import-cert`, { method: 'POST', body: formData });
     },
+    updateCertificateChain: (file, alias, keyPassword, sessionId) => {
+        const formData = new FormData();
+        formData.append('certFile', file);
+        formData.append('alias', alias);
+        formData.append('keyPassword', keyPassword);
+        formData.append('sessionId', sessionId);
+        return fetch(`${API_BASE_URL}/keystore/update-chain`, { method: 'POST', body: formData });
+    },
     deleteEntry: (alias, sessionId) => {
         return fetch(`${API_BASE_URL}/keystore/entry/${alias}?sessionId=${sessionId}`, { method: 'DELETE' });
     },
@@ -179,7 +187,7 @@ const DashboardStats = ({ stats }) => {
     );
 };
 
-const CertificateTable = ({ certificates, handleDelete, handleExport, handleView, handleGenerateCsr }) => {
+const CertificateTable = ({ certificates, handleDelete, handleExport, handleView, handleGenerateCsr, handleUpdateChain }) => {
     if (certificates.length === 0) {
         return (
             <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
@@ -229,6 +237,7 @@ const CertificateTable = ({ certificates, handleDelete, handleExport, handleView
                                  <div className="flex items-center space-x-3">
                                     <button onClick={() => handleView(cert)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="View Details"><i className="fas fa-eye"></i></button>
                                     <button onClick={() => handleExport(cert)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="Export"><i className="fas fa-file-export"></i></button>
+                                    {isKeyPair(cert) && <button onClick={() => handleUpdateChain(cert.alias)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="Update Chain"><i className="fas fa-link"></i></button>}
                                     {isKeyPair(cert) && <button onClick={() => handleGenerateCsr(cert.alias)} className="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400" title="Generate CSR"><i className="fas fa-file-signature"></i></button>}
                                     <button onClick={() => handleDelete(cert.alias)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300" title="Delete"><i className="fas fa-trash-alt"></i></button>
                                 </div>
@@ -394,6 +403,45 @@ const GenerateCsrModal = ({ isOpen, onClose, alias, sessionId, setError }) => {
     );
 };
 
+const UpdateChainModal = ({ isOpen, onClose, alias, handleUpdate, sessionId }) => {
+    const [keyPassword, setKeyPassword] = useState('');
+    const [file, setFile] = useState(null);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (file) {
+            handleUpdate(file, alias, keyPassword, sessionId);
+            onClose();
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-lg m-4">
+                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Update Certificate Chain for: {alias}</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Key Password</label>
+                        <input type="password" value={keyPassword} onChange={e => setKeyPassword(e.target.value)} required className="mt-1 w-full form-input" placeholder="Password for this key entry"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">New Certificate File (PEM/P7B)</label>
+                        <input type="file" onChange={(e) => setFile(e.target.files[0])} accept=".pem,.cer,.crt,.p7b" required className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/50 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900"/>
+                    </div>
+                    <div className="flex justify-end space-x-4 pt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition">Cancel</button>
+                        <button type="submit" className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition">Update Chain</button>
+                    </div>
+                </form>
+            </div>
+            <style>{`.form-input { padding: 0.5rem 0.75rem; border-radius: 0.375rem; border: 1px solid #cbd5e1; background-color: white; } .dark .form-input { border-color: #475569; background-color: #334155; color: white; }`}</style>
+        </div>
+    );
+};
+
+
 const ExportModal = ({ isOpen, onClose, certificate, sessionId, setError }) => {
     const [exportType, setExportType] = useState('cert');
     const [certFormat, setCertFormat] = useState('pem');
@@ -499,47 +547,97 @@ const CertificateViewModal = ({ isOpen, onClose, certificate }) => {
         });
     };
 
-    const Detail = ({ label, value }) => (
-        <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
-            <p className="text-sm text-slate-900 dark:text-white break-words">{value}</p>
+    const DetailSection = ({ title, children }) => (
+        <div className="mb-4">
+            <h4 className="text-md font-semibold text-slate-600 dark:text-slate-300 mb-2 border-b pb-1 dark:border-slate-600">{title}</h4>
+            <div className="pl-2 space-y-1 text-sm">{children}</div>
         </div>
     );
 
-    const DnDetails = ({ title, dn }) => (
+    const DetailItem = ({ label, children }) => (
         <div>
-            <h4 className="text-md font-semibold text-slate-700 dark:text-slate-300 mb-2">{title}</h4>
-            <div className="space-y-1 text-sm pl-2 border-l-2 dark:border-slate-600">
-                {parseDn(dn).map(({key, value}) => <p key={key}><span className="font-semibold text-slate-500 dark:text-slate-400">{key} = </span>{value}</p>)}
-            </div>
+            <span className="font-semibold text-slate-500 dark:text-slate-400">{label}: </span>
+            <span className="break-all">{children}</span>
+        </div>
+    );
+
+    const DnDetails = ({ dn }) => (
+         <div className="space-y-1">
+            {parseDn(dn).map(({key, value}) => <DetailItem key={key} label={key}>{value}</DetailItem>)}
         </div>
     );
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-3xl m-4 max-h-[90vh] overflow-y-auto">
-                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Certificate Details: {certificate.alias}</h2>
-
-                <div className="space-y-6">
-                    {certificate.chain.map((cert, index) => (
-                        <div key={index} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                            <h3 className="text-lg font-semibold mb-3 text-indigo-600 dark:text-indigo-400">
-                                {index === 0 ? 'End-Entity Certificate' : `Intermediate Certificate ${index}`}
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                                <DnDetails title="Subject" dn={cert.subject} />
-                                <DnDetails title="Issuer" dn={cert.issuer} />
-                                <Detail label="Serial Number" value={cert.serialNumber} />
-                                <Detail label="Signature Algorithm" value={cert.signatureAlgorithm} />
-                                <Detail label="Valid From" value={new Date(cert.notBefore).toLocaleString()} />
-                                <Detail label="Valid To" value={new Date(cert.notAfter).toLocaleString()} />
-                            </div>
-                        </div>
-                    ))}
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-full overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Certificate Inspector</h2>
+                     <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-2xl">&times;</button>
                 </div>
 
-                <div className="flex justify-end pt-6">
-                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-md text-white bg-slate-600 hover:bg-slate-700 transition">Close</button>
+                <div className="flex space-x-6">
+                    {/* Left Pane: Certificate Chain */}
+                    <div className="w-1/3 border-r pr-4 dark:border-slate-700">
+                        <h3 className="text-lg font-semibold mb-3 text-indigo-600 dark:text-indigo-400">Certificate Path</h3>
+                         <ul className="space-y-2">
+                             {certificate.chain.map((cert, index) => (
+                                 <li key={cert.serialNumber} className="flex items-start space-x-2">
+                                     <i className={`fas ${index === 0 ? 'fa-certificate' : 'fa-arrow-turn-up fa-rotate-90'} mt-1 text-slate-400`}></i>
+                                     <div>
+                                         <p className="font-semibold text-sm text-slate-700 dark:text-slate-200">{parseDn(cert.subject).find(d => d.key === 'CN')?.value}</p>
+                                         <p className="text-xs text-slate-500 dark:text-slate-400">Issuer: {parseDn(cert.issuer).find(d => d.key === 'CN')?.value}</p>
+                                     </div>
+                                 </li>
+                             ))}
+                         </ul>
+                    </div>
+
+                    {/* Right Pane: Details of Selected Cert (always shows first cert for now) */}
+                    <div className="w-2/3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                            <DetailSection title="Subject"><DnDetails dn={certificate.chain[0].subject} /></DetailSection>
+                            <DetailSection title="Issuer"><DnDetails dn={certificate.chain[0].issuer} /></DetailSection>
+                        </div>
+
+                        <DetailSection title="Validity">
+                            <DetailItem label="Not Before">{new Date(certificate.chain[0].notBefore).toLocaleString()}</DetailItem>
+                            <DetailItem label="Not After">{new Date(certificate.chain[0].notAfter).toLocaleString()}</DetailItem>
+                        </DetailSection>
+
+                        <DetailSection title="Details">
+                            <DetailItem label="Version">{certificate.chain[0].version}</DetailItem>
+                            <DetailItem label="Serial Number">{certificate.chain[0].serialNumber}</DetailItem>
+                            <DetailItem label="Signature Algorithm">{certificate.chain[0].signatureAlgorithm}</DetailItem>
+                        </DetailSection>
+
+                        <DetailSection title="Public Key">
+                            <DetailItem label="Algorithm">{certificate.chain[0].publicKeyAlgorithm}</DetailItem>
+                            <DetailItem label="Size">{certificate.chain[0].publicKeySize} bits</DetailItem>
+                        </DetailSection>
+
+                        {certificate.chain[0].keyUsage?.length > 0 &&
+                            <DetailSection title="Key Usage">
+                                <p className="text-green-600 dark:text-green-400">{certificate.chain[0].keyUsage.join(', ')}</p>
+                            </DetailSection>
+                        }
+
+                         {certificate.chain[0].extendedKeyUsage?.length > 0 &&
+                            <DetailSection title="Extended Key Usage">
+                                {certificate.chain[0].extendedKeyUsage.map(u => <p key={u}>{u}</p>)}
+                            </DetailSection>
+                        }
+
+                        {certificate.chain[0].subjectAlternativeNames?.length > 0 &&
+                            <DetailSection title="Subject Alternative Names (SANs)">
+                                {certificate.chain[0].subjectAlternativeNames.map(n => <p key={n}>{n}</p>)}
+                            </DetailSection>
+                        }
+
+                        <DetailSection title="Thumbprints">
+                            <DetailItem label="SHA-256">{certificate.chain[0].thumbprints['SHA-256']}</DetailItem>
+                            <DetailItem label="SHA-1">{certificate.chain[0].thumbprints['SHA-1']}</DetailItem>
+                        </DetailSection>
+                    </div>
                 </div>
             </div>
         </div>
@@ -569,11 +667,11 @@ const ImportCertificateModal = ({ isOpen, onClose, handleImport }) => {
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md m-4">
-                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Import Certificate</h2>
+                <h2 className="text-2xl font-bold mb-6 text-slate-900 dark:text-white">Import Trusted Certificate</h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Alias</label>
-                        <input type="text" value={alias} onChange={e => setAlias(e.target.value)} required className="mt-1 w-full form-input"/>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">New Alias</label>
+                        <input type="text" value={alias} onChange={e => setAlias(e.target.value)} required className="mt-1 w-full form-input" placeholder="A unique alias for the new entry"/>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Certificate File</label>
@@ -596,6 +694,7 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
     const [viewCert, setViewCert] = useState(null);
     const [exportCert, setExportCert] = useState(null);
     const [csrAlias, setCsrAlias] = useState(null);
+    const [updateChainAlias, setUpdateChainAlias] = useState(null);
 
     const { certificates, stats } = dashboardData;
 
@@ -621,6 +720,21 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
             const res = await api.importCertificate(file, alias, sessionId);
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to import certificate.');
+            setDashboardData(result);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateChain = async (file, alias, keyPassword) => {
+         setLoading(true);
+        setError(null);
+        try {
+            const res = await api.updateCertificateChain(file, alias, keyPassword, sessionId);
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'Failed to update chain.');
             setDashboardData(result);
         } catch (err) {
             setError(err.message);
@@ -655,7 +769,7 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Keystore Dashboard</h1>
                 <div className="flex space-x-3">
                     <button onClick={() => setIsCreateModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition"><i className="fas fa-key mr-2"></i>Create Key Pair</button>
-                    <button onClick={() => setIsImportModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-teal-600 hover:bg-teal-700 transition"><i className="fas fa-file-import mr-2"></i>Import Certificate</button>
+                    <button onClick={() => setIsImportModalOpen(true)} className="px-4 py-2 rounded-md text-white bg-teal-600 hover:bg-teal-700 transition"><i className="fas fa-file-import mr-2"></i>Import Trust Cert</button>
                     <button onClick={downloadKeystore} className="px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 transition"><i className="fas fa-save mr-2"></i>Save Keystore</button>
                     <button onClick={endSession} className="px-4 py-2 rounded-md text-slate-700 bg-slate-200 hover:bg-slate-300 dark:text-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 transition"><i className="fas fa-sign-out-alt mr-2"></i>End Session</button>
                 </div>
@@ -669,10 +783,12 @@ const Dashboard = ({ dashboardData, sessionId, setDashboardData, setLoading, set
                 handleExport={setExportCert}
                 handleView={setViewCert}
                 handleGenerateCsr={setCsrAlias}
+                handleUpdateChain={setUpdateChainAlias}
              />
 
             <CreateKeyPairModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} handleCreateKeyPair={handleCreateKeyPair} />
             <ImportCertificateModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} handleImport={handleImport} />
+            <UpdateChainModal isOpen={!!updateChainAlias} onClose={() => setUpdateChainAlias(null)} alias={updateChainAlias} handleUpdate={handleUpdateChain} sessionId={sessionId} />
             {viewCert && <CertificateViewModal isOpen={true} onClose={() => setViewCert(null)} certificate={viewCert} />}
             {exportCert && <ExportModal isOpen={true} onClose={() => setExportCert(null)} certificate={exportCert} sessionId={sessionId} setError={setError} />}
             {csrAlias && <GenerateCsrModal isOpen={true} onClose={() => setCsrAlias(null)} alias={csrAlias} sessionId={sessionId} setError={setError} />}

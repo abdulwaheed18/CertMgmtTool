@@ -24,7 +24,6 @@ public class CertManagementController {
     // This is a placeholder for a real user session mechanism (e.g., from Spring Security)
     private final Map<String, KeyStore> activeKeystores = new ConcurrentHashMap<>();
     private final Map<String, String> keystorePasswords = new ConcurrentHashMap<>();
-    private static final String MOCK_SESSION_ID = "user-session-123";
 
 
     private KeyStore getKeystoreForSession(String sessionId) {
@@ -77,6 +76,20 @@ public class CertManagementController {
             return getDashboardDetails(ks);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error creating new keystore: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/update-chain")
+    public ResponseEntity<?> updateCertificateChain(@RequestParam("certFile") MultipartFile file,
+                                                    @RequestParam("alias") String alias,
+                                                    @RequestParam("keyPassword") String keyPassword,
+                                                    @RequestParam("sessionId") String sessionId) {
+        try {
+            KeyStore ks = getKeystoreForSession(sessionId);
+            keystoreService.updateCertificateChain(ks, alias, keyPassword, file.getBytes());
+            return getDashboardDetails(ks);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error updating certificate chain: " + e.getMessage()));
         }
     }
 
